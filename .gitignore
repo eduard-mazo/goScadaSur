@@ -1,0 +1,26 @@
+# Ejecutables binarios
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Archivos de prueba/coverage
+*.test
+*.out
+*.coverprofile
+
+# Archivos de compilación Go
+bin/
+dist/
+build/
+
+# Archivos del editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.DS_Store
+
+# Archivos de dependencias (Go modules se encargan de esto)
+vendor/
