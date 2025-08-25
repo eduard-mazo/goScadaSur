@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,58 +20,88 @@ import (
 	"golang.org/x/term"
 )
 
+// Variables para almacenar las credenciales y los nuevos argumentos
 var (
-	devMode bool
+	user       string
+	password   string
+	b1, b2, b3 string
 )
 
 func main() {
 	var rootCmd = &cobra.Command{
 		Use:   "launcher",
-		Short: "Ejecuta ConsoleApp1.exe, verifica integridad y guarda en CSV",
+		Short: "Launcher para ejecutar consultas a la base de datos de Survalent.",
+		Long: `Este programa actúa como una interfaz para survalentDB.exe, 
+facilitando la ejecución de consultas de dos maneras:
+1. station-search: Busca una estación y recupera todas sus señales analógicas y digitales.
+2. direct-query: Ejecuta una consulta SQL directa en la base de datos.
+
+Ambos modos verifican la integridad de los datos recibidos y guardan el resultado en un archivo CSV.`,
+	}
+
+	// Flags persistentes para todos los subcomandos
+	rootCmd.PersistentFlags().StringVarP(&user, "user", "u", "", "Nombre de usuario para la base de datos")
+	rootCmd.PersistentFlags().StringVarP(&password, "password", "p", "", "Contraseña para la base de datos")
+
+	// --- Subcomando para buscar por estación (Modificado) ---
+	var stationSearchCmd = &cobra.Command{
+		Use:   "station-search",
+		Short: "Busca una estación por su nombre (provisto con -b3) y recupera sus señales.",
+		Long:  "Usa los flags -b1, -b2, y -b3 para especificar los parámetros de búsqueda. -b3 es obligatorio.",
+		Args:  cobra.NoArgs, // Ya no acepta argumentos posicionales
 		Run: func(cmd *cobra.Command, args []string) {
-			runApp(devMode)
+			// El query para este modo es el valor del flag -b3
+			stationName := b3
+			executeCommand("station_search", stationName)
 		},
 	}
 
-	rootCmd.Flags().BoolVar(&devMode, "devMode", false, "Ejecutar en modo desarrollo con credenciales por defecto")
+	// Añadir los flags específicos para este subcomando
+	stationSearchCmd.Flags().StringVar(&b1, "b1", "", "Parámetro B1 (actualmente sin uso directo)")
+	stationSearchCmd.Flags().StringVar(&b2, "b2", "", "Parámetro B2 (actualmente sin uso directo)")
+	stationSearchCmd.Flags().StringVar(&b3, "b3", "", "Parámetro B3, contiene el nombre de la estación a buscar")
+	stationSearchCmd.MarkFlagRequired("b3") // -b3 es ahora obligatorio
 
+	// Subcomando para consulta directa (sin cambios)
+	var directQueryCmd = &cobra.Command{
+		Use:   "direct-query [consulta SQL]",
+		Short: "Ejecuta una consulta SQL directamente en la base de datos.",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			sqlQuery := args[0]
+			executeCommand("direct_query", sqlQuery)
+		},
+	}
+
+	rootCmd.AddCommand(stationSearchCmd, directQueryCmd)
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println("Error ejecutando comando:", err)
+		fmt.Println("Error ejecutando el comando:", err)
 		os.Exit(1)
 	}
 }
 
-func runApp(devMode bool) {
-	var user, pass, query string
-
-	if devMode {
-		user = "admin"
-		pass = ".Qwe123456789"
-		query = "SELECT pkey FROM AnalogPoints WHERE pkey >= 300000 AND pkey <= 300000" // Query más pequeña para desarrollo
-		fmt.Println("[DEV]\tModo desarrollo activado.")
-	} else {
-		// Lógica para pedir datos al usuario (sin cambios)
+// executeCommand es la función principal que maneja la ejecución del proceso C#
+func executeCommand(mode, query string) {
+	// Obtener credenciales si no fueron provistas por los flags
+	if user == "" {
 		fmt.Print("[INPUT]\tUsuario: ")
 		reader := bufio.NewReader(os.Stdin)
 		userInput, _ := reader.ReadString('\n')
-		user = userInput[:len(userInput)-1]
+		user = strings.TrimSpace(userInput)
+	}
 
+	if password == "" {
 		fmt.Print("[INPUT]\tContraseña: ")
 		bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
-			log.Fatal("Error al leer la contraseña")
+			log.Fatalf("[FATAL]\tError al leer la contraseña: %v", err)
 		}
 		fmt.Println()
-		pass = string(bytePassword)
-
-		fmt.Print("[INPUT]\tQuery: ")
-		reader = bufio.NewReader(os.Stdin)
-		userInput, _ = reader.ReadString('\n')
-		query = userInput[:len(userInput)-1]
+		password = string(bytePassword)
 	}
 
+	// --- Ejecución del Proceso Externo ---
 	cmd := exec.Command("./survalentDB.exe")
-
 	stdoutPipe, _ := cmd.StdoutPipe()
 	stderrPipe, _ := cmd.StderrPipe()
 	stdinPipe, _ := cmd.StdinPipe()
@@ -79,13 +110,16 @@ func runApp(devMode bool) {
 		log.Fatalf("[FATAL]\tError al iniciar el proceso: %v", err)
 	}
 
+	// Enviar datos al stdin del proceso hijo en una goroutine
 	go func() {
 		defer stdinPipe.Close()
-		fmt.Fprintln(stdinPipe, user)
-		fmt.Fprintln(stdinPipe, pass)
-		fmt.Fprintln(stdinPipe, query)
+		fmt.Fprintln(stdinPipe, mode)     // 1. Modo de operación
+		fmt.Fprintln(stdinPipe, user)     // 2. Usuario
+		fmt.Fprintln(stdinPipe, password) // 3. Contraseña
+		fmt.Fprintln(stdinPipe, query)    // 4. Query o término de búsqueda
 	}()
 
+	// Capturar stdout y stderr de forma concurrente
 	var wg sync.WaitGroup
 	var outBuf, errBuf bytes.Buffer
 	wg.Add(2)
@@ -107,16 +141,17 @@ func runApp(devMode bool) {
 
 	output := outBuf.Bytes()
 	if !gjson.ValidBytes(output) {
-		log.Printf("[WARNING]\tLa salida no es un JSON válido.\n")
+		log.Println("[WARNING]\tLa salida no es un JSON válido.")
+		fmt.Printf("[OUTPUT]\n%s\n", outBuf.String())
 		return
 	}
 
-	// --- VERIFICACIÓN DE INTEGRIDAD ---
+	// --- Verificación de Integridad ---
 	payloadJSON := gjson.GetBytes(output, "payload").Raw
 	receivedChecksum := gjson.GetBytes(output, "checksum").String()
 
 	if payloadJSON == "" || receivedChecksum == "" {
-		log.Fatal("[FATAL]\tLa respuesta no contiene 'payload' o 'checksum'.")
+		log.Fatal("[FATAL]\tLa respuesta JSON no contiene 'payload' o 'checksum'.")
 	}
 
 	hasher := sha256.New()
@@ -124,31 +159,19 @@ func runApp(devMode bool) {
 	calculatedChecksum := hex.EncodeToString(hasher.Sum(nil))
 
 	if calculatedChecksum != receivedChecksum {
-		log.Printf("\t[FATAL]\t¡ERROR DE INTEGRIDAD! Los datos pueden estar corruptos.")
+		log.Printf("[FATAL]\t¡ERROR DE INTEGRIDAD! Los datos pueden estar corruptos.")
 		log.Printf("\tChecksum Recibido:\t%s", receivedChecksum)
 		log.Printf("\tChecksum Calculado:\t%s", calculatedChecksum)
-		fmt.Println(string(output))
 		return
 	}
 	fmt.Println("[OK]\tVerificación de integridad exitosa.")
 
-	// --- IMPRIMIR DATOS SOLICITADOS ---
-	firstResult := gjson.Get(payloadJSON, "data.0")
-	firstColumn := gjson.Get(payloadJSON, "columns.0")
-
-	fmt.Println("\n--- PRIMER RESULTADO (data[0]) ---")
-	fmt.Println(firstResult.String())
-	fmt.Println("\n--- PRIMERA COLUMNA (columns[0]) ---")
-	fmt.Println(firstColumn.String())
-
-	// --- GUARDAR EN CSV ---
-	t := time.Now().Format("20060102_150405") // AAAAMMDD_HHMMSS
-	filename := t + "_output.csv"
-
+	// --- Guardado en CSV ---
+	filename := time.Now().Format("20060102_150405") + "_output.csv"
 	if err := saveToCSV(payloadJSON, filename); err != nil {
-		log.Fatalf("\t[FATAL]\tError al guardar en CSV: %v", err)
+		log.Fatalf("[FATAL]\tError al guardar en CSV: %v", err)
 	}
-	fmt.Printf("\n[OK]\tDatos guardados correctamente en 'output.csv'.\n")
+	fmt.Printf("\n[OK]\tDatos guardados correctamente en '%s'.\n", filename)
 }
 
 // saveToCSV convierte el JSON del payload a un archivo CSV.
@@ -172,20 +195,19 @@ func saveToCSV(payloadJSON, filePath string) error {
 		return fmt.Errorf("no se pudo escribir la cabecera: %w", err)
 	}
 
-	// Escribir filas
+	// Escribir filas de datos
 	dataResult := gjson.Get(payloadJSON, "data")
-	for _, row := range dataResult.Array() {
+	dataResult.ForEach(func(key, row gjson.Result) bool {
 		var record []string
-		// Iterar en el orden de las cabeceras para mantener la consistencia
 		for _, header := range headers {
-			// gjson permite escapar caracteres especiales en los nombres de campo
-			value := gjson.Get(row.Raw, gjson.Escape(header))
+			value := row.Get(header)
 			record = append(record, value.String())
 		}
 		if err := writer.Write(record); err != nil {
-			return fmt.Errorf("no se pudo escribir la fila: %w", err)
+			log.Printf("Error al escribir la fila: %v", err)
 		}
-	}
+		return true // continuar iterando
+	})
 
-	return nil
+	return writer.Error()
 }
