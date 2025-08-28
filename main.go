@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"quindar/pkg/xmlcreator"
 	"strings"
 	"sync"
 	"time"
@@ -35,7 +36,7 @@ type CSharpInput struct {
 }
 
 var (
-	user, password, host, b1, b2, b3 string
+	user, password, host, path, aor string
 )
 
 func main() {
@@ -54,45 +55,48 @@ func main() {
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			// CAMBIO: Se pasa b3 en su propio parámetro y la query va vacía.
-			executeCommand("station_search", "", b1, b2, b3)
+			executeCommand("station_search", "", path, aor)
 		},
 	}
 
-	stationSearchCmd.Flags().StringVar(&b1, "b1", "", "Parámetro B1")
-	stationSearchCmd.Flags().StringVar(&b2, "b2", "", "Parámetro B2")
-	stationSearchCmd.Flags().StringVar(&b3, "b3", "", "Parámetro B3, contiene el nombre de la estación a buscar")
-	stationSearchCmd.MarkFlagRequired("b3")
+	stationSearchCmd.Flags().StringVar(&path, "path", "", "Path del sistema B1/B2/B3")
+	stationSearchCmd.Flags().StringVar(&aor, "aor", "", "Area de responsabilidad")
+	stationSearchCmd.MarkFlagRequired("path")
+	stationSearchCmd.MarkFlagRequired("aor")
 
 	var directQueryCmd = &cobra.Command{
 		Use:   "direct-query [consulta SQL]",
 		Short: "Ejecuta una consulta SQL directamente en la base de datos.",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			executeCommand("direct_query", args[0], "", "", "")
+			executeCommand("direct_query", args[0], "", "")
 		},
 	}
 
 	rootCmd.AddCommand(stationSearchCmd, directQueryCmd)
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println("Error ejecutando el comando:", err)
+		fmt.Println("[ERROR] Ejecución del comando:", err)
 		os.Exit(1)
 	}
 }
 
 // CAMBIO: La firma de la función ahora acepta b3.
-func executeCommand(mode, query, b1, b2, b3 string) {
+func executeCommand(mode, query, path, aor string) {
+	empresa, region, b1, b2, b3, err := ParsearRuta(path)
+	if err != nil {
+		log.Printf("Error al parsear la ruta: %v", err)
+	}
+	// Use the helper function for each string input, making the code DRY (Don't Repeat Yourself)
 	if host == "" {
-		fmt.Print("[INPUT]\thost: ")
-		reader := bufio.NewReader(os.Stdin)
-		hostInput, _ := reader.ReadString('\n')
-		host = strings.TrimSpace(hostInput)
+		host = readStringInput("[INPUT]\thost: ")
+	}
+	if path == "" {
+		path = readStringInput("[INPUT]\tPath: ")
 	}
 	if user == "" {
-		fmt.Print("[INPUT]\tUsuario: ")
-		reader := bufio.NewReader(os.Stdin)
-		userInput, _ := reader.ReadString('\n')
-		user = strings.TrimSpace(userInput)
+		user = readStringInput("[INPUT]\tUsuario: ")
 	}
+	// Password input still requires special handling due to `term.ReadPassword`
 	if password == "" {
 		fmt.Print("[INPUT]\tContraseña: ")
 		bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -179,41 +183,88 @@ func executeCommand(mode, query, b1, b2, b3 string) {
 		return
 	}
 	fmt.Println("[OK]\tVerificación de integridad exitosa.")
-
+	fmt.Printf("[DEBUG] AOR:\t%s\n", aor)
 	filename := time.Now().Format("20060102_150405") + "_output.csv"
-	if err := saveToCSV(payloadJSON, filename); err != nil {
+	if err := saveToCSV(payloadJSON, filename, empresa, region, aor); err != nil {
 		log.Fatalf("[FATAL]\tError al guardar en CSV: %v", err)
 	}
+
 	fmt.Printf("\n[OK]\tDatos guardados correctamente en '%s'.\n", filename)
+
+	if err := xmlcreator.CreateXML(payloadJSON, empresa, region, aor); err != nil {
+		log.Fatalf("[FATAL]\tError al decodificar JSON: %v", err)
+	}
+
 }
 
-func saveToCSV(payloadJSON, filePath string) error {
+func saveToCSV(payloadJSON, filePath, empresa, region, aor string) error {
 	file, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("no se pudo crear el archivo: %w", err)
 	}
 	defer file.Close()
+
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
+
+	// Retrieve dynamic headers from the JSON
 	columnsResult := gjson.Get(payloadJSON, "columns.#.name")
-	var headers []string
+	var dynamicHeaders []string
 	for _, name := range columnsResult.Array() {
-		headers = append(headers, name.String())
+		dynamicHeaders = append(dynamicHeaders, name.String())
 	}
+
+	// Combine constant headers with dynamic ones
+	headers := append([]string{"EMPRESA", "REGION", "AOR"}, dynamicHeaders...)
+
+	// Write the full header row
 	if err := writer.Write(headers); err != nil {
 		return fmt.Errorf("no se pudo escribir la cabecera: %w", err)
 	}
+
+	// Process each data row
 	dataResult := gjson.Get(payloadJSON, "data")
 	dataResult.ForEach(func(key, row gjson.Result) bool {
-		var record []string
-		for _, header := range headers {
+		// Start each record with the constant values
+		record := []string{empresa, region, aor}
+
+		// Append the dynamic values from the JSON row
+		for _, header := range dynamicHeaders {
 			value := row.Get(header)
 			record = append(record, value.String())
 		}
+
 		if err := writer.Write(record); err != nil {
 			log.Printf("Error al escribir la fila: %v", err)
 		}
 		return true
 	})
+
 	return writer.Error()
+}
+
+func ParsearRuta(path string) (empresa, region, b1, b2, b3 string, err error) {
+	// Divide la cadena usando el separador "/"
+	parts := strings.Split(path, "/")
+
+	// Valida que el número de partes sea exactamente 5
+	if len(parts) != 5 {
+		return "", "", "", "", "", fmt.Errorf("la ruta no tiene el formato esperado, se esperaban 5 partes, pero se encontraron %d", len(parts))
+	}
+
+	empresa = parts[0]
+	region = parts[1]
+	b1 = parts[2]
+	b2 = parts[3]
+	b3 = parts[4]
+
+	return empresa, region, b1, b2, b3, nil
+}
+
+// readStringInput is a helper function to read a trimmed string from the user.
+func readStringInput(prompt string) string {
+	fmt.Print(prompt)
+	reader := bufio.NewReader(os.Stdin)
+	input, _ := reader.ReadString('\n')
+	return strings.TrimSpace(input)
 }
