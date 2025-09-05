@@ -1,4 +1,4 @@
-// main.go
+// goScadaSur/pkg/xmlcreator/creator.go
 package xmlcreator
 
 import (
@@ -19,70 +19,70 @@ import (
 // ===================================================================================
 
 type ElementDef struct {
-	Analog   *Analog   `xml:"Analog,omitempty"`
-	Discrete *Discrete `xml:"Discrete,omitempty"`
-	Breaker  *Breaker  `xml:"Breaker,omitempty"`
-	IfsPoint *IfsPoint `xml:"IfsPoint,omitempty"`
+	Analog   *Analog   `json:"Analog,omitempty" xml:"Analog,omitempty"`
+	Discrete *Discrete `json:"Discrete,omitempty" xml:"Discrete,omitempty"`
+	Breaker  *Breaker  `json:"Breaker,omitempty" xml:"Breaker,omitempty"`
+	IfsPoint *IfsPoint `json:"IfsPoint,omitempty" xml:"IfsPoint,omitempty"`
 }
 
 type Analog struct {
-	XMLName                xml.Name     `xml:"Analog"`
-	Name                   string       `xml:"Name,attr"`
-	UnitOfMeasure          string       `xml:"UnitOfMeasure,attr"`
-	ElementType            string       `xml:"ElementType,attr"`
-	ElementName            string       `xml:"ElementName,attr"`
-	MeasurementType        string       `xml:"MeasurementType,attr"`
-	AreaOfResponsibilityId string       `xml:"AreaOfResponsibilityId,attr"`
-	AnalogValue            *AnalogValue `xml:"AnalogValue,omitempty"`
-	AnalogInfo             *AnalogInfo  `xml:"AnalogInfo,omitempty"`
+	XMLName                xml.Name     `json:"-" xml:"Analog"`
+	Name                   string       `json:"Name,omitempty" xml:"Name,attr"`
+	UnitOfMeasure          string       `json:"UnitOfMeasure,omitempty" xml:"UnitOfMeasure,attr"`
+	ElementType            string       `json:"ElementType,omitempty" xml:"ElementType,attr"`
+	ElementName            string       `json:"ElementName,omitempty" xml:"ElementName,attr"`
+	MeasurementType        string       `json:"MeasurementType,omitempty" xml:"MeasurementType,attr"`
+	AreaOfResponsibilityId string       `json:"AreaOfResponsibilityId,omitempty" xml:"AreaOfResponsibilityId,attr"`
+	AnalogValue            *AnalogValue `json:"AnalogValue,omitempty" xml:"AnalogValue,omitempty"`
+	AnalogInfo             *AnalogInfo  `json:"AnalogInfo,omitempty" xml:"AnalogInfo,omitempty"`
 }
 
 type AnalogValue struct {
-	Name     string `xml:"Name,attr"`
-	Archive  string `xml:"Archive,attr"`
-	InfoName string `xml:"InfoName,attr"`
+	Name     string `json:"Name,omitempty" xml:"Name,attr"`
+	Archive  string `json:"Archive,omitempty" xml:"Archive,attr"`
+	InfoName string `json:"InfoName,omitempty" xml:"InfoName,attr"`
 }
 type AnalogInfo struct {
-	Name     string `xml:"Name,attr"`
-	Value    string `xml:"Value,attr"`
-	InfoName string `xml:"InfoName,attr"`
+	Name     string `json:"Name,omitempty" xml:"Name,attr"`
+	Value    string `json:"Value,omitempty" xml:"Value,attr"`
+	InfoName string `json:"InfoName,omitempty" xml:"InfoName,attr"`
 }
 
 type Discrete struct {
-	XMLName                xml.Name       `xml:"Discrete"`
-	Name                   string         `xml:"Name,attr"`
-	ElementType            string         `xml:"ElementType,attr"`
-	ElementName            string         `xml:"ElementName,attr"`
-	MeasurementType        string         `xml:"MeasurementType,attr"`
-	AreaOfResponsibilityId string         `xml:"AreaOfResponsibilityId,attr"`
-	DiscreteValue          *DiscreteValue `xml:"DiscreteValue,omitempty"`
-	DiscreteInfo           *DiscreteInfo  `xml:"DiscreteInfo,omitempty"`
+	XMLName                xml.Name       `json:"-" xml:"Discrete"`
+	Name                   string         `json:"Name,omitempty" xml:"Name,attr"`
+	ElementType            string         `json:"ElementType,omitempty" xml:"ElementType,attr"`
+	ElementName            string         `json:"ElementName,omitempty" xml:"ElementName,attr"`
+	MeasurementType        string         `json:"MeasurementType,omitempty" xml:"MeasurementType,attr"`
+	AreaOfResponsibilityId string         `json:"AreaOfResponsibilityId,omitempty" xml:"AreaOfResponsibilityId,attr"`
+	DiscreteValue          *DiscreteValue `json:"DiscreteValue,omitempty" xml:"DiscreteValue,omitempty"`
+	DiscreteInfo           *DiscreteInfo  `json:"DiscreteInfo,omitempty" xml:"DiscreteInfo,omitempty"`
 }
 
 type DiscreteValue struct {
-	Name     string `xml:"Name,attr"`
-	InfoName string `xml:"InfoName,attr"`
+	Name     string `json:"Name,omitempty" xml:"Name,attr"`
+	InfoName string `json:"InfoName,omitempty" xml:"InfoName,attr"`
 }
 type DiscreteInfo struct {
-	Name     string `xml:"Name,attr"`
-	Value    string `xml:"Value,attr"`
-	InfoName string `xml:"InfoName,attr"`
+	Name     string `json:"Name,omitempty" xml:"Name,attr"`
+	Value    string `json:"Value,omitempty" xml:"Value,attr"`
+	InfoName string `json:"InfoName,omitempty" xml:"InfoName,attr"`
 }
 
 type Breaker struct {
-	XMLName                xml.Name    `xml:"Breaker"`
-	Name                   string      `xml:"Name,attr"`
-	FlowBreakerFlag        string      `xml:"FlowBreakerFlag,attr"`
-	VoltMagLimitCA         string      `xml:"VoltMagLimitCA,attr"`
-	DMSFlag                string      `xml:"DMSFlag,attr"`
-	AreaOfResponsibilityId string      `xml:"AreaOfResponsibilityId,attr"`
-	Terminals              []*Terminal `xml:"Terminal,omitempty"`
-	Discrete               *Discrete   `xml:"Discrete,omitempty"`
+	XMLName                xml.Name    `json:"-" xml:"Breaker"`
+	Name                   string      `json:"Name,omitempty" xml:"Name,attr"`
+	FlowBreakerFlag        string      `json:"FlowBreakerFlag,omitempty" xml:"FlowBreakerFlag,attr"`
+	VoltMagLimitCA         string      `json:"VoltMagLimitCA,omitempty" xml:"VoltMagLimitCA,attr"`
+	DMSFlag                string      `json:"DMSFlag,omitempty" xml:"DMSFlag,attr"`
+	AreaOfResponsibilityId string      `json:"AreaOfResponsibilityId,omitempty" xml:"AreaOfResponsibilityId,attr"`
+	Terminals              []*Terminal `json:"Terminals,omitempty" xml:"Terminal,omitempty"`
+	Discrete               *Discrete   `json:"Discrete,omitempty" xml:"Discrete,omitempty"`
 }
 
 type Terminal struct {
-	Name     string `xml:"Name,attr"`
-	EquipEnd string `xml:"EquipEnd,attr"`
+	Name     string `json:"Name,omitempty" xml:"Name,attr"`
+	EquipEnd string `json:"EquipEnd,omitempty" xml:"EquipEnd,attr"`
 }
 
 type XDF struct {
@@ -108,6 +108,10 @@ type IfsPoint struct {
 	MonAddrLow               string                    `xml:"MonAddrLow,attr"`
 	MonAddrMiddle            string                    `xml:"MonAddrMiddle,attr"`
 	MonType                  string                    `xml:"MonType,attr"`
+	ConAddrHigh              string                    `xml:"ConAddrHigh,attr"`
+	ConAddrLow               string                    `xml:"ConAddrLow,attr"`
+	ConAddrMiddle            string                    `xml:"ConAddrMiddle,attr"`
+	ConType                  string                    `xml:"ConType,attr"`
 	SelectBefore             string                    `xml:"SelectBefore,attr"`
 	Link_IfsPointLinksToInfo *Link_IfsPointLinksToInfo `xml:"Link_IfsPointLinksToInfo,omitempty"`
 }
@@ -117,549 +121,109 @@ type Link_IfsPointLinksToInfo struct {
 }
 
 // ===================================================================================
-// 2. PLANTILLA BASE DE ELEMENTOS (Sin cambios)
+// 2. LÓGICA PRINCIPAL DEL PROGRAMA (Refactorizada)
 // ===================================================================================
-var elementDB = map[string]ElementDef{
-	"AjProGr1": {
-		Breaker: &Breaker{
-			Name:                   "AjProGr1",
-			FlowBreakerFlag:        "true",
-			VoltMagLimitCA:         "0",
-			DMSFlag:                "true",
-			AreaOfResponsibilityId: "{AOR}",
-			Terminals: []*Terminal{
-				{Name: "T2", EquipEnd: "2"},
-				{Name: "T1", EquipEnd: "1"},
-			},
-			Discrete: &Discrete{
-				Name:                   "AjProGr1",
-				ElementType:            "2208",
-				ElementName:            "1755",
-				MeasurementType:        "22",
-				AreaOfResponsibilityId: "{AOR}",
-				DiscreteValue:          &DiscreteValue{Name: "Status", InfoName: "60000003"},
-				DiscreteInfo:           &DiscreteInfo{Name: "NormStat", Value: "1", InfoName: "60000023"},
-			},
-		},
-	},
-	"AjProGr2": {
-		Breaker: &Breaker{
-			Name:                   "AjProGr2",
-			FlowBreakerFlag:        "true",
-			VoltMagLimitCA:         "0",
-			DMSFlag:                "true",
-			AreaOfResponsibilityId: "{AOR}",
-			Terminals: []*Terminal{
-				{Name: "T2", EquipEnd: "2"},
-				{Name: "T1", EquipEnd: "1"},
-			},
-			Discrete: &Discrete{
-				Name:                   "AjProGr2",
-				ElementType:            "2208",
-				ElementName:            "1754",
-				MeasurementType:        "22",
-				AreaOfResponsibilityId: "{AOR}",
-				DiscreteValue:          &DiscreteValue{Name: "Status", InfoName: "60000003"},
-				DiscreteInfo:           &DiscreteInfo{Name: "NormStat", Value: "0", InfoName: "60000023"},
-			},
-		},
-	},
-	"AjProGr3": {
-		Breaker: &Breaker{
-			Name:                   "AjProGr3",
-			FlowBreakerFlag:        "true",
-			VoltMagLimitCA:         "0",
-			DMSFlag:                "true",
-			AreaOfResponsibilityId: "{AOR}",
-			Terminals: []*Terminal{
-				{Name: "T2", EquipEnd: "2"},
-				{Name: "T1", EquipEnd: "1"},
-			},
-			Discrete: &Discrete{
-				Name:                   "AjProGr3",
-				ElementType:            "2208",
-				ElementName:            "1756",
-				MeasurementType:        "22",
-				AreaOfResponsibilityId: "{AOR}",
-				DiscreteValue:          &DiscreteValue{Name: "Status", InfoName: "60000003"},
-				DiscreteInfo:           &DiscreteInfo{Name: "NormStat", Value: "0", InfoName: "60000023"},
-			},
-		},
-	},
-	"BAH_07": {
-		Discrete: &Discrete{
-			Name:                   "BAH_07",
-			ElementType:            "2873",
-			ElementName:            "1431",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"BAH_09": {
-		Discrete: &Discrete{
-			Name:                   "BAH_09",
-			ElementType:            "2873",
-			ElementName:            "1041",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"Bl_Spec": {
-		Discrete: &Discrete{
-			Name:                   "Bl Spec",
-			ElementType:            "5",
-			ElementName:            "1",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-		},
-	},
-	"CTR_01": {
-		Discrete: &Discrete{
-			Name:                   "CTR_01",
-			ElementType:            "2873",
-			ElementName:            "1174",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"CTR_06": {
-		Discrete: &Discrete{
-			Name:                   "CTR_06",
-			ElementType:            "2873",
-			ElementName:            "1179",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"CTR_12": {
-		Discrete: &Discrete{
-			Name:                   "CTR_12",
-			ElementType:            "2873",
-			ElementName:            "1185",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"CTR_15": {
-		Discrete: &Discrete{
-			Name:                   "CTR_15",
-			ElementType:            "2863",
-			ElementName:            "1186",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"CTR_16": {
-		Discrete: &Discrete{
-			Name:                   "CTR_16",
-			ElementType:            "2863",
-			ElementName:            "1187",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"CTR_17": {
-		Discrete: &Discrete{
-			Name:                   "CTR_17",
-			ElementType:            "2863",
-			ElementName:            "1188",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"CtrlBloq": {
-		Breaker: &Breaker{
-			Name:                   "CtrlBloq",
-			FlowBreakerFlag:        "true",
-			VoltMagLimitCA:         "0",
-			DMSFlag:                "true",
-			AreaOfResponsibilityId: "{AOR}",
-			Terminals: []*Terminal{
-				{Name: "T2", EquipEnd: "2"},
-				{Name: "T1", EquipEnd: "1"},
-			},
-			Discrete: &Discrete{
-				Name:                   "CtrlBloq",
-				ElementType:            "2208",
-				ElementName:            "1765",
-				MeasurementType:        "22",
-				AreaOfResponsibilityId: "{AOR}",
-				DiscreteValue:          &DiscreteValue{Name: "Status", InfoName: "60000003"},
-				DiscreteInfo:           &DiscreteInfo{Name: "NormStat", Value: "0", InfoName: "60000023"},
-			},
-		},
-	},
-	"INT_01": {
-		Discrete: &Discrete{
-			Name:                   "INT_01",
-			ElementType:            "2873",
-			ElementName:            "853",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"INT_30": {
-		Discrete: &Discrete{
-			Name:                   "INT_30",
-			ElementType:            "2873",
-			ElementName:            "1160",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"IRFalla": {
-		Analog: &Analog{
-			Name:                   "IRFalla",
-			UnitOfMeasure:          "A",
-			ElementType:            "10",
-			ElementName:            "1809",
-			MeasurementType:        "2",
-			AreaOfResponsibilityId: "{AOR}",
-			AnalogValue:            &AnalogValue{Name: "MvMoment", Archive: "true", InfoName: "20000001"},
-			AnalogInfo:             &AnalogInfo{Name: "MvNomina", Value: "0", InfoName: "20000002"},
-		},
-	},
-	"ISFalla": {
-		Analog: &Analog{
-			Name:                   "ISFalla",
-			UnitOfMeasure:          "A",
-			ElementType:            "10",
-			ElementName:            "1810",
-			MeasurementType:        "2",
-			AreaOfResponsibilityId: "{AOR}",
-			AnalogValue:            &AnalogValue{Name: "MvMoment", Archive: "true", InfoName: "20000001"},
-			AnalogInfo:             &AnalogInfo{Name: "MvNomina", Value: "0", InfoName: "20000002"},
-		},
-	},
-	"ITFalla": {
-		Analog: &Analog{
-			Name:                   "ITFalla",
-			UnitOfMeasure:          "A",
-			ElementType:            "10",
-			ElementName:            "1811",
-			MeasurementType:        "2",
-			AreaOfResponsibilityId: "{AOR}",
-			AnalogValue:            &AnalogValue{Name: "MvMoment", Archive: "true", InfoName: "20000001"},
-			AnalogInfo:             &AnalogInfo{Name: "MvNomina", Value: "0", InfoName: "20000002"},
-		},
-	},
-	"I_R": {
-		Analog: &Analog{
-			Name:                   "I R",
-			UnitOfMeasure:          "A",
-			ElementType:            "10",
-			ElementName:            "1905",
-			MeasurementType:        "2",
-			AreaOfResponsibilityId: "{AOR}",
-			AnalogValue:            &AnalogValue{Name: "MvMoment", Archive: "true", InfoName: "20000001"},
-			AnalogInfo:             &AnalogInfo{Name: "MvNomina", Value: "0", InfoName: "20000002"},
-		},
-	},
-	"I_S": {
-		Analog: &Analog{
-			Name:                   "I S",
-			UnitOfMeasure:          "A",
-			ElementType:            "10",
-			ElementName:            "1906",
-			MeasurementType:        "2",
-			AreaOfResponsibilityId: "{AOR}",
-			AnalogValue:            &AnalogValue{Name: "MvMoment", Archive: "true", InfoName: "20000001"},
-			AnalogInfo:             &AnalogInfo{Name: "MvNomina", Value: "0", InfoName: "20000002"},
-		},
-	},
-	"I_T": {
-		Analog: &Analog{
-			Name:                   "I T",
-			UnitOfMeasure:          "A",
-			ElementType:            "10",
-			ElementName:            "1907",
-			MeasurementType:        "2",
-			AreaOfResponsibilityId: "{AOR}",
-			AnalogValue:            &AnalogValue{Name: "MvMoment", Archive: "true", InfoName: "20000001"},
-			AnalogInfo:             &AnalogInfo{Name: "MvNomina", Value: "0", InfoName: "20000002"},
-		},
-	},
-	"P1_13": {
-		Discrete: &Discrete{
-			Name:                   "P1_13",
-			ElementType:            "2863",
-			ElementName:            "880",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"P1_14": {
-		Discrete: &Discrete{
-			Name:                   "P1_14",
-			ElementType:            "2863",
-			ElementName:            "881",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"P1_19": {
-		Discrete: &Discrete{
-			Name:                   "P1_19",
-			ElementType:            "2863",
-			ElementName:            "952",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"P1_20": {
-		Discrete: &Discrete{
-			Name:                   "P1_20",
-			ElementType:            "2863",
-			ElementName:            "954",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"P1_21": {
-		Discrete: &Discrete{
-			Name:                   "P1_21",
-			ElementType:            "2863",
-			ElementName:            "956",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"P1_22": {
-		Discrete: &Discrete{
-			Name:                   "P1_22",
-			ElementType:            "2863",
-			ElementName:            "953",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"P1_23": {
-		Discrete: &Discrete{
-			Name:                   "P1_23",
-			ElementType:            "2863",
-			ElementName:            "955",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"P1_24": {
-		Discrete: &Discrete{
-			Name:                   "P1_24",
-			ElementType:            "2863",
-			ElementName:            "957",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"P1_27": {
-		Discrete: &Discrete{
-			Name:                   "P1_27",
-			ElementType:            "2863",
-			ElementName:            "972",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"P1_48": {
-		Discrete: &Discrete{
-			Name:                   "P1_48",
-			ElementType:            "2873",
-			ElementName:            "1048",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"PrLinViv": {
-		Breaker: &Breaker{
-			Name:                   "PrLinViv",
-			FlowBreakerFlag:        "true",
-			VoltMagLimitCA:         "0",
-			DMSFlag:                "true",
-			AreaOfResponsibilityId: "{AOR}",
-			Terminals: []*Terminal{
-				{Name: "T2", EquipEnd: "2"},
-				{Name: "T1", EquipEnd: "1"},
-			},
-			Discrete: &Discrete{
-				Name:                   "PrLinViv",
-				ElementType:            "2208",
-				ElementName:            "1763",
-				MeasurementType:        "22",
-				AreaOfResponsibilityId: "{AOR}",
-				DiscreteValue:          &DiscreteValue{Name: "Status", InfoName: "60000003"},
-				DiscreteInfo:           &DiscreteInfo{Name: "NormStat", Value: "0", InfoName: "60000023"},
-			},
-		},
-	},
-	"PrTierra": {
-		Breaker: &Breaker{
-			Name:                   "PrTierra",
-			FlowBreakerFlag:        "true",
-			VoltMagLimitCA:         "0",
-			DMSFlag:                "true",
-			AreaOfResponsibilityId: "{AOR}",
-			Terminals: []*Terminal{
-				{Name: "T2", EquipEnd: "2"},
-				{Name: "T1", EquipEnd: "1"},
-			},
-			Discrete: &Discrete{
-				Name:                   "PrTierra",
-				ElementType:            "2208",
-				ElementName:            "1760",
-				MeasurementType:        "22",
-				AreaOfResponsibilityId: "{AOR}",
-				DiscreteValue:          &DiscreteValue{Name: "Status", InfoName: "60000003"},
-				DiscreteInfo:           &DiscreteInfo{Name: "NormStat", Value: "1", InfoName: "60000023"},
-			},
-		},
-	},
-	"Protcion": {
-		Breaker: &Breaker{
-			Name:                   "Protcion",
-			FlowBreakerFlag:        "true",
-			VoltMagLimitCA:         "0",
-			DMSFlag:                "true",
-			AreaOfResponsibilityId: "{AOR}",
-			Terminals: []*Terminal{
-				{Name: "T2", EquipEnd: "2"},
-				{Name: "T1", EquipEnd: "1"},
-			},
-			Discrete: &Discrete{
-				Name:                   "Protcion",
-				ElementType:            "2208",
-				ElementName:            "1759",
-				MeasurementType:        "22",
-				AreaOfResponsibilityId: "{AOR}",
-				DiscreteValue:          &DiscreteValue{Name: "Status", InfoName: "60000003"},
-			},
-		},
-	},
-	"Reclos": {
-		Breaker: &Breaker{
-			Name:                   "Reclos",
-			FlowBreakerFlag:        "true",
-			VoltMagLimitCA:         "0",
-			DMSFlag:                "true",
-			AreaOfResponsibilityId: "{AOR}",
-			Terminals: []*Terminal{
-				{Name: "T2", EquipEnd: "2"},
-				{Name: "T1", EquipEnd: "1"},
-			},
-			Discrete: &Discrete{
-				Name:                   "Reclos",
-				ElementType:            "2208",
-				ElementName:            "731",
-				MeasurementType:        "22",
-				AreaOfResponsibilityId: "{AOR}",
-				DiscreteValue:          &DiscreteValue{Name: "Status", InfoName: "60000003"},
-				DiscreteInfo:           &DiscreteInfo{Name: "NormStat", Value: "1", InfoName: "60000023"},
-			},
-		},
-	},
-	"SA_05": {
-		Discrete: &Discrete{
-			Name:                   "SA_05",
-			ElementType:            "2873",
-			ElementName:            "1882",
-			MeasurementType:        "0",
-			AreaOfResponsibilityId: "{AOR}",
-			DiscreteInfo:           &DiscreteInfo{Name: "AlStat", Value: "", InfoName: "180000007"},
-		},
-	},
-	"U_RS": {
-		Analog: &Analog{
-			Name:                   "U RS",
-			UnitOfMeasure:          "kV",
-			ElementType:            "17",
-			ElementName:            "1953",
-			MeasurementType:        "2",
-			AreaOfResponsibilityId: "{AOR}",
-			AnalogValue:            &AnalogValue{Name: "MvMoment", Archive: "true", InfoName: "20000001"},
-			AnalogInfo:             &AnalogInfo{Name: "MvNomina", Value: "0", InfoName: "20000002"},
-		},
-	},
-	"U_ST": {
-		Analog: &Analog{
-			Name:                   "U ST",
-			UnitOfMeasure:          "kV",
-			ElementType:            "17",
-			ElementName:            "1954",
-			MeasurementType:        "2",
-			AreaOfResponsibilityId: "{AOR}",
-			AnalogValue:            &AnalogValue{Name: "MvMoment", Archive: "true", InfoName: "20000001"},
-			AnalogInfo:             &AnalogInfo{Name: "MvNomina", Value: "0", InfoName: "20000002"},
-		},
-	},
-	"U_TR": {
-		Analog: &Analog{
-			Name:                   "U TR",
-			UnitOfMeasure:          "kV",
-			ElementType:            "17",
-			ElementName:            "1955",
-			MeasurementType:        "2",
-			AreaOfResponsibilityId: "{AOR}",
-			AnalogValue:            &AnalogValue{Name: "MvMoment", Archive: "true", InfoName: "20000001"},
-			AnalogInfo:             &AnalogInfo{Name: "MvNomina", Value: "0", InfoName: "20000002"},
-		},
-	},
-}
 
-// deepCopy crea una copia independiente de un elemento para evitar modificar la plantilla original.
+const (
+	xmlLang          = "EN"
+	xmlVersion       = "2.0.00"
+	templateFilePath = "templates.json" // Nombre del archivo de plantillas
+)
+
+// Variable global para almacenar las plantillas cargadas
+var elementDB map[string]ElementDef
+
+// deepCopy crea una copia profunda de un ElementDef para evitar modificar la plantilla original.
 func deepCopy(elementDef ElementDef) (ElementDef, error) {
 	var copiedDef ElementDef
 	bytes, err := json.Marshal(elementDef)
 	if err != nil {
-		return copiedDef, err
+		return copiedDef, fmt.Errorf("error al serializar plantilla para copia: %w", err)
 	}
 	err = json.Unmarshal(bytes, &copiedDef)
 	return copiedDef, err
 }
 
-// ===================================================================================
-// 3. LÓGICA PRINCIPAL DEL PROGRAMA (Refactorizada)
-// ===================================================================================
+// loadElementDB carga las plantillas de elementos desde un archivo JSON.
+func loadElementDB(filePath string) (map[string]ElementDef, error) {
+	fileBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo leer el archivo de plantillas '%s': %w", filePath, err)
+	}
 
-const (
-	xmlLang       = "EN"
-	xmlVersion    = "2.0.00"
-	ifsParentPath = "SCADA/RTU" // Path base para el archivo IFS
-)
+	var db map[string]ElementDef
+	if err := json.Unmarshal(fileBytes, &db); err != nil {
+		return nil, fmt.Errorf("no se pudo decodificar el JSON de plantillas desde '%s': %w", filePath, err)
+	}
+	return db, nil
+}
 
 func CreateXML(payloadJSON, empresa, region, aor string) error {
-	// --- 1. Decodificar JSON para capturar Header y Rows ---
+	// --- 1. Cargar plantillas de elementos desde archivo externo ---
+	var err error
+	elementDB, err = loadElementDB(templateFilePath)
+	if err != nil {
+		return fmt.Errorf("no se pudieron inicializar las plantillas de elementos: %w", err)
+	}
+
+	// --- 2. Decodificar JSON para capturar Header y Rows ---
 	dataRows, headerMap, err := readCSVFromJSON(payloadJSON, empresa, region, aor)
 	if err != nil {
 		return err
 	}
 
-	// --- 2. Procesar filas para generar los elementos de ambos XML en un solo paso ---
+	if len(dataRows) == 0 {
+		log.Println("Advertencia: No se encontraron datos en el payload JSON para procesar.")
+		return nil
+	}
+
+	// --- 3. Procesar filas para generar los elementos de ambos XML ---
 	elementsForIMM, elementsForIFS := processRows(dataRows, headerMap)
 
-	// --- 3. Ensamblar y guardar los archivos XML ---
+	// --- 4. Ensamblar y guardar los archivos XML ---
 	firstRow := dataRows[0]
 	b3Value := firstRow[headerMap["B3"]]
 
-	// Generar Path para el archivo IMM usando datos de la primera fila
+	// --- 4a. Determinar el Path para el archivo IFS dinámicamente ---
+	var ifsParentPath string
+	dasIPValue := firstRow[headerMap["DASIP"]]
+	switch dasIPValue {
+	case "1":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0133/DASip1"
+	case "6":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0135/DASip2"
+	case "7":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0137/DASip3"
+	case "11":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0139/DASip4"
+	case "12":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0141/DASip5"
+	case "8":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0143/DASip6"
+	case "15":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0145/DASip7"
+	case "9":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0147/DASip8"
+	case "16":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0173/DASip9"
+	case "14":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0152/DASip10"
+	case "18":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0155/DASip11"
+	case "21":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0157/DASip12"
+	case "22":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0189/DASip13"
+	default:
+		// Fallback por si el valor no es el esperado
+		log.Printf("Advertencia: Valor de DASIP no reconocido ('%s'). Usando 'SCADA/RTU' como path por defecto.", dasIPValue)
+		ifsParentPath = "SCADA/RTU"
+	}
+
+	parts := strings.Split(ifsParentPath, "/")
+	log.Printf("Señales pertenecientes a ->\t%s", parts[4])
+
+	// --- 4b. Generar Path para el archivo IMM ---
 	parentPathIMM := fmt.Sprintf("ELECTRICITY/NETWORK/%s/%s/%s/%s/%s",
 		firstRow[headerMap["EMPRESA"]],
 		firstRow[headerMap["REGION"]],
@@ -674,7 +238,7 @@ func CreateXML(payloadJSON, empresa, region, aor string) error {
 		return err
 	}
 
-	// Crear y guardar el archivo IFS
+	// Crear y guardar el archivo IFS usando el path dinámico
 	fileNameIFS := b3Value + "_IFS.xml"
 	if err := createAndSaveXML(fileNameIFS, ifsParentPath, elementsForIFS); err != nil {
 		return err
@@ -683,15 +247,12 @@ func CreateXML(payloadJSON, empresa, region, aor string) error {
 	return nil
 }
 
-// readCSVFromJSON processes a JSON payload to extract CSV-like data and headers.
-// It expects the JSON to have "columns" (an array of objects with "name" fields)
-// and "data" (an array of objects representing rows).
 func readCSVFromJSON(payloadJSON, empresa, region, aor string) ([][]string, map[string]int, error) {
+	// (Esta función no requiere cambios)
 	if !gjson.Valid(payloadJSON) {
 		return nil, nil, errors.New("payloadJSON no es un JSON válido")
 	}
 
-	// 1. Combine headers: constants + dynamic
 	constantHeaders := []string{"EMPRESA", "REGION", "AOR"}
 	dynamicHeadersResult := gjson.Get(payloadJSON, "columns.#.name")
 
@@ -706,13 +267,11 @@ func readCSVFromJSON(payloadJSON, empresa, region, aor string) ([][]string, map[
 
 	headers := append(constantHeaders, dynamicHeaders...)
 
-	// 2. Build Header Map
 	headerMap := make(map[string]int)
 	for i, name := range headers {
 		headerMap[name] = i
 	}
 
-	// 3. Extract Data Rows
 	dataResult := gjson.Get(payloadJSON, "data")
 	if !dataResult.Exists() || !dataResult.IsArray() {
 		return nil, nil, errors.New("el campo 'data' no se encontró o no es un array válido en el JSON")
@@ -724,10 +283,8 @@ func readCSVFromJSON(payloadJSON, empresa, region, aor string) ([][]string, map[
 			log.Printf("Advertencia: Se encontró una fila no-objeto. Saltando.")
 			return true
 		}
-		// Start each record with the constant values
 		record := []string{empresa, region, aor}
 
-		// Append the dynamic values from the JSON row
 		for _, header := range dynamicHeaders {
 			value := row.Get(header)
 			record = append(record, value.String())
@@ -736,60 +293,79 @@ func readCSVFromJSON(payloadJSON, empresa, region, aor string) ([][]string, map[
 		return true
 	})
 
-	if len(records) == 0 {
-		return records, headerMap, nil
-	}
-
 	return records, headerMap, nil
 }
 
-// processRows itera una sola vez sobre los registros del CSV para generar las listas de elementos
-// para los archivos IMM e IFS, mejorando la eficiencia.
+// processRows itera sobre los registros para generar las listas de elementos para los archivos IMM e IFS.
 func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM []any, elementsForIFS []any) {
 	for _, row := range dataRows {
+		// Usar la clave original para búsquedas en el mapa de plantillas
 		elementKey := row[headerMap["ELEMENT"]]
+		template, isTemplateFound := elementDB[elementKey]
+		isBreaker := isTemplateFound && template.Breaker != nil
 
-		// --- Generación de elementos IFS para cada fila ---
-		var suffix, sbo string
-		if row[headerMap["TYPE"]] == "SP_SC" {
-			suffix = "MC"
+		// --- Paso 1: Generación del elemento IFS ---
+		var ifsNameElementPart string
+		var ifsPathElementPart string
+
+		// El nombre para el IMM y el nombre para el IFS pueden ser diferentes
+		var displayName string
+
+		if row[headerMap["INFO"]] == "MvMoment" {
+			displayName = strings.ReplaceAll(elementKey, "_", " ")
 		} else {
-			suffix = "M"
+			displayName = elementKey
 		}
 
-		if row[headerMap["SBO"]] == "" {
-			sbo = "0"
+		if isBreaker || row[headerMap["ELEMENT"]] == "CB" {
+			// Nomenclatura para Breaker: repetir el nombre del elemento
+			ifsNameElementPart = fmt.Sprintf("%s_%s", displayName, displayName)
+			ifsPathElementPart = fmt.Sprintf("%s/%s", displayName, displayName) // El path usa la llave original
 		} else {
-			sbo = row[headerMap["SBO"]]
+			ifsNameElementPart = displayName
+			ifsPathElementPart = displayName // El path usa la llave original
+		}
+
+		// Determinar sufijo y valor SBO
+		suffix := "M"
+		if row[headerMap["TYPE"]] == "SP_SC" {
+			suffix = "MC"
+		}
+		sbo := "0"
+		if sboValue := row[headerMap["SBO"]]; sboValue != "" {
+			sbo = sboValue
 		}
 
 		ifsPoint := &IfsPoint{
 			Name: fmt.Sprintf("%s_%s_%s_%s_%s_%s",
 				row[headerMap["B1"]], row[headerMap["B2"]], row[headerMap["B3"]],
-				elementKey, row[headerMap["INFO"]], suffix),
-			MonAddrHigh:   row[headerMap["HB"]],
-			MonAddrMiddle: row[headerMap["MB"]],
-			MonAddrLow:    row[headerMap["LB"]],
-			MonType:       "0", // Valor constante
+				ifsNameElementPart, row[headerMap["INFO"]], suffix),
+			MonAddrHigh:   row[headerMap["MHB"]],
+			MonAddrMiddle: row[headerMap["MMB"]],
+			MonAddrLow:    row[headerMap["MLB"]],
+			MonType:       "0",
+			ConAddrHigh:   row[headerMap["CHB"]],
+			ConAddrMiddle: row[headerMap["CMB"]],
+			ConAddrLow:    row[headerMap["CLB"]],
+			ConType:       map[bool]string{true: "45", false: "0"}[row[headerMap["TYPE"]] == "SP_SC"],
 			SelectBefore:  sbo,
 			Link_IfsPointLinksToInfo: &Link_IfsPointLinksToInfo{
 				PathB: fmt.Sprintf("ELECTRICITY/NETWORK/%s/%s/%s/%s/%s/%s/%s",
 					row[headerMap["EMPRESA"]], row[headerMap["REGION"]], row[headerMap["B1"]],
-					row[headerMap["B2"]], row[headerMap["B3"]], elementKey, row[headerMap["INFO"]]),
+					row[headerMap["B2"]], row[headerMap["B3"]], ifsPathElementPart, row[headerMap["INFO"]]),
 			},
 		}
 		elementsForIFS = append(elementsForIFS, ifsPoint)
 
-		// --- Generación de elementos IMM para cada fila ---
-		template, ok := elementDB[elementKey]
-		if !ok {
-			log.Printf("Advertencia: La llave '%s' del CSV no fue encontrada en la plantilla. Se omite para la generación IMM.", elementKey)
+		// --- Paso 2: Generación del elemento IMM ---
+		if !isTemplateFound {
+			log.Printf("Advertencia: La llave '%s' no fue encontrada en la plantilla. Se omite para la generación IMM.", elementKey)
 			continue
 		}
 
 		instance, err := deepCopy(template)
 		if err != nil {
-			log.Printf("Error al copiar la plantilla para la llave '%s': %v. Se omite para la generación IMM.", elementKey, err)
+			log.Printf("Error al copiar la plantilla para la llave '%s': %v. Se omite.", elementKey, err)
 			continue
 		}
 
@@ -797,17 +373,18 @@ func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM 
 		var elementToAppend any
 
 		if instance.Analog != nil {
-			instance.Analog.Name = strings.ReplaceAll(elementKey, "_", " ")
+			instance.Analog.Name = displayName // Usar el nombre con espacios si aplica
 			instance.Analog.AreaOfResponsibilityId = aor
 			elementToAppend = instance.Analog
 		} else if instance.Discrete != nil {
-			instance.Discrete.Name = elementKey
+			instance.Discrete.Name = displayName
 			instance.Discrete.AreaOfResponsibilityId = aor
 			elementToAppend = instance.Discrete
 		} else if instance.Breaker != nil {
-			instance.Breaker.Name = elementKey
+			instance.Breaker.Name = displayName
 			instance.Breaker.AreaOfResponsibilityId = aor
 			if instance.Breaker.Discrete != nil {
+				instance.Breaker.Discrete.Name = displayName // También actualizar el discreto anidado
 				instance.Breaker.Discrete.AreaOfResponsibilityId = aor
 			}
 			elementToAppend = instance.Breaker
@@ -821,6 +398,12 @@ func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM 
 }
 
 func createAndSaveXML(fileName, parentPath string, elements []any) error {
+	// (Esta función no requiere cambios)
+	if len(elements) == 0 {
+		log.Printf("Información: No se generará el archivo '%s' porque no hay elementos para incluir.", fileName)
+		return nil
+	}
+
 	outputStruct := XDF{
 		Lang:    xmlLang,
 		Version: xmlVersion,
@@ -838,10 +421,10 @@ func createAndSaveXML(fileName, parentPath string, elements []any) error {
 	encoder.Indent("", "    ")
 
 	if err := encoder.Encode(outputStruct); err != nil {
-		return fmt.Errorf("error al codificar el XML: %w", err)
+		return fmt.Errorf("error al codificar el XML para '%s': %w", fileName, err)
 	}
 	if err := os.WriteFile(fileName, out.Bytes(), 0644); err != nil {
-		return fmt.Errorf("error al escribir el archivo: %w", err)
+		return fmt.Errorf("error al escribir el archivo '%s': %w", fileName, err)
 	}
 
 	fmt.Printf("✅ Archivo generado exitosamente: %s\n", fileName)

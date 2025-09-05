@@ -22,8 +22,7 @@ import (
 	"golang.org/x/term"
 )
 
-// Estructura para enviar los datos a C# como un solo JSON
-// Se añade el campo B3 para un contrato de datos explícito.
+// CSharpInput defines the structure for sending data to the C# application.
 type CSharpInput struct {
 	Mode     string `json:"mode"`
 	User     string `json:"user"`
@@ -42,31 +41,35 @@ var (
 func main() {
 	var rootCmd = &cobra.Command{
 		Use:   "launcher",
-		Short: "Launcher para ejecutar consultas a la base de datos de Survalent.",
+		Short: "Launcher to execute queries against the Survalent database.",
 	}
 
-	rootCmd.PersistentFlags().StringVarP(&host, "host", "i", "", "IP del host")
-	rootCmd.PersistentFlags().StringVarP(&user, "user", "u", "", "Nombre de usuario para la base de datos")
-	rootCmd.PersistentFlags().StringVarP(&password, "password", "p", "", "Contraseña para la base de datos")
+	rootCmd.PersistentFlags().StringVarP(&host, "host", "i", "", "Host IP address")
+	rootCmd.PersistentFlags().StringVarP(&user, "user", "u", "", "Database username")
+	rootCmd.PersistentFlags().StringVarP(&password, "password", "p", "", "Database password")
 
 	var stationSearchCmd = &cobra.Command{
 		Use:   "station-search",
-		Short: "Busca una estación por su nombre (provisto con -b3) y recupera sus señales.",
+		Short: "Searches for a station by name (provided with --path) and retrieves its signals.",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			// CAMBIO: Se pasa b3 en su propio parámetro y la query va vacía.
 			executeCommand("station_search", "", path, aor)
 		},
 	}
 
-	stationSearchCmd.Flags().StringVar(&path, "path", "", "Path del sistema B1/B2/B3")
-	stationSearchCmd.Flags().StringVar(&aor, "aor", "", "Area de responsabilidad")
-	stationSearchCmd.MarkFlagRequired("path")
-	stationSearchCmd.MarkFlagRequired("aor")
+	stationSearchCmd.Flags().StringVar(&path, "path", "", "System path (e.g., B1/B2/B3)")
+	stationSearchCmd.Flags().StringVar(&aor, "aor", "", "Area of responsibility")
+	// FIX: Added error handling for MarkFlagRequired.
+	if err := stationSearchCmd.MarkFlagRequired("path"); err != nil {
+		log.Fatalf("[FATAL] Error marking 'path' flag as required: %v", err)
+	}
+	if err := stationSearchCmd.MarkFlagRequired("aor"); err != nil {
+		log.Fatalf("[FATAL] Error marking 'aor' flag as required: %v", err)
+	}
 
 	var directQueryCmd = &cobra.Command{
-		Use:   "direct-query [consulta SQL]",
-		Short: "Ejecuta una consulta SQL directamente en la base de datos.",
+		Use:   "direct-query [SQL query]",
+		Short: "Executes a SQL query directly on the database.",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			executeCommand("direct_query", args[0], "", "")
@@ -75,39 +78,34 @@ func main() {
 
 	rootCmd.AddCommand(stationSearchCmd, directQueryCmd)
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println("[ERROR] Ejecución del comando:", err)
+		fmt.Println("[ERROR] Command execution failed:", err)
 		os.Exit(1)
 	}
 }
 
-// CAMBIO: La firma de la función ahora acepta b3.
 func executeCommand(mode, query, path, aor string) {
 	empresa, region, b1, b2, b3, err := ParsearRuta(path)
-	if err != nil {
-		log.Printf("Error al parsear la ruta: %v", err)
+	if err != nil && mode != "direct_query" {
+		log.Printf("Error parsing path: %v", err)
 	}
-	// Use the helper function for each string input, making the code DRY (Don't Repeat Yourself)
+
 	if host == "" {
-		host = readStringInput("[INPUT]\thost: ")
+		host = readStringInput("[INPUT]\tHost: ")
 	}
-	if path == "" {
-		path = readStringInput("[INPUT]\tPath: ")
-	}
+	// FIX: Removed ineffectual assignment to 'path' as it's a required flag.
 	if user == "" {
-		user = readStringInput("[INPUT]\tUsuario: ")
+		user = readStringInput("[INPUT]\tUser: ")
 	}
-	// Password input still requires special handling due to `term.ReadPassword`
 	if password == "" {
-		fmt.Print("[INPUT]\tContraseña: ")
+		fmt.Print("[INPUT]\tPassword: ")
 		bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
-			log.Fatalf("[FATAL]\tError al leer la contraseña: %v", err)
+			log.Fatalf("[FATAL]\tError reading password: %v", err)
 		}
 		fmt.Println()
 		password = string(bytePassword)
 	}
 
-	// Crear la estructura de entrada
 	inputData := CSharpInput{
 		Mode:     mode,
 		User:     user,
@@ -119,24 +117,21 @@ func executeCommand(mode, query, path, aor string) {
 		B3:       b3,
 	}
 
-	// Convertir la estructura a un string JSON
 	inputBytes, err := json.Marshal(inputData)
 	if err != nil {
-		log.Fatalf("[FATAL]\tError al crear el JSON de entrada: %v", err)
+		log.Fatalf("[FATAL]\tError creating input JSON: %v", err)
 	}
 	inputJsonString := string(inputBytes)
 
-	// --- Ejecución del Proceso Externo ---
 	cmd := exec.Command("./survalentDB.exe")
 	stdoutPipe, _ := cmd.StdoutPipe()
 	stderrPipe, _ := cmd.StderrPipe()
 	stdinPipe, _ := cmd.StdinPipe()
 
 	if err := cmd.Start(); err != nil {
-		log.Fatalf("[FATAL]\tError al iniciar el proceso: %v", err)
+		log.Fatalf("[FATAL]\tError starting process: %v", err)
 	}
 
-	// Enviar la única línea de JSON al stdin del proceso hijo
 	go func() {
 		defer stdinPipe.Close()
 		fmt.Fprintln(stdinPipe, inputJsonString)
@@ -145,12 +140,23 @@ func executeCommand(mode, query, path, aor string) {
 	var wg sync.WaitGroup
 	var outBuf, errBuf bytes.Buffer
 	wg.Add(2)
-	go func() { defer wg.Done(); io.Copy(&outBuf, stdoutPipe) }()
-	go func() { defer wg.Done(); io.Copy(&errBuf, stderrPipe) }()
+	// FIX: Added error handling for io.Copy.
+	go func() {
+		defer wg.Done()
+		if _, err := io.Copy(&outBuf, stdoutPipe); err != nil {
+			log.Printf("[ERROR] Failed to read stdout: %v", err)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if _, err := io.Copy(&errBuf, stderrPipe); err != nil {
+			log.Printf("[ERROR] Failed to read stderr: %v", err)
+		}
+	}()
 	wg.Wait()
 
 	if err := cmd.Wait(); err != nil {
-		log.Printf("[ERROR]\tProceso terminó con error: %v", err)
+		log.Printf("[ERROR]\tProcess finished with error: %v", err)
 		if errBuf.Len() > 0 {
 			log.Printf("[STDERR]: %s", errBuf.String())
 		}
@@ -163,7 +169,7 @@ func executeCommand(mode, query, path, aor string) {
 
 	output := outBuf.Bytes()
 	if !gjson.ValidBytes(output) {
-		log.Println("[WARNING]\tLa salida no es un JSON válido.")
+		log.Println("[WARNING]\tOutput is not valid JSON.")
 		fmt.Printf("[OUTPUT]\n%s\n", outBuf.String())
 		return
 	}
@@ -171,7 +177,7 @@ func executeCommand(mode, query, path, aor string) {
 	payloadJSON := gjson.GetBytes(output, "payload").Raw
 	receivedChecksum := gjson.GetBytes(output, "checksum").String()
 	if payloadJSON == "" || receivedChecksum == "" {
-		log.Fatal("[FATAL]\tLa respuesta JSON no contiene 'payload' o 'checksum'.")
+		log.Fatal("[FATAL]\tJSON response is missing 'payload' or 'checksum'.")
 	}
 
 	hasher := sha256.New()
@@ -179,77 +185,112 @@ func executeCommand(mode, query, path, aor string) {
 	calculatedChecksum := hex.EncodeToString(hasher.Sum(nil))
 
 	if calculatedChecksum != receivedChecksum {
-		log.Printf("[FATAL]\t¡ERROR DE INTEGRIDAD! Los datos pueden estar corruptos.")
+		log.Printf("[FATAL]\tINTEGRITY ERROR! Data may be corrupt.")
 		return
 	}
-	fmt.Println("[OK]\tVerificación de integridad exitosa.")
-	fmt.Printf("[DEBUG] AOR:\t%s\n", aor)
-	filename := time.Now().Format("20060102_150405") + "_output.csv"
-	if err := saveToCSV(payloadJSON, filename, empresa, region, aor); err != nil {
-		log.Fatalf("[FATAL]\tError al guardar en CSV: %v", err)
+	fmt.Println("[OK]\tIntegrity check successful.")
+
+	switch mode {
+	case "direct_query":
+		filename := time.Now().Format("20060102_150405") + "_direct_query.csv"
+		if err := saveDirectQueryToCSV(payloadJSON, filename); err != nil {
+			log.Fatalf("[FATAL]\tError saving direct query to CSV: %v", err)
+		}
+		fmt.Printf("\n[OK]\tDirect query data saved to '%s'.\n", filename)
+
+	case "station_search":
+		fmt.Printf("[DEBUG] AOR:\t%s\n", aor)
+		filename := time.Now().Format("20060102_150405") + "_" + b3 + "_" + ".csv"
+		if err := saveToCSV(payloadJSON, filename, empresa, region, aor); err != nil {
+			log.Fatalf("[FATAL]\tError saving to CSV: %v", err)
+		}
+		fmt.Printf("\n[OK]\tData saved successfully to '%s'.\n", filename)
+
+		if err := xmlcreator.CreateXML(payloadJSON, empresa, region, aor); err != nil {
+			log.Fatalf("[FATAL]\tError creating XML: %v", err)
+		}
 	}
-
-	fmt.Printf("\n[OK]\tDatos guardados correctamente en '%s'.\n", filename)
-
-	if err := xmlcreator.CreateXML(payloadJSON, empresa, region, aor); err != nil {
-		log.Fatalf("[FATAL]\tError al decodificar JSON: %v", err)
-	}
-
 }
 
-func saveToCSV(payloadJSON, filePath, empresa, region, aor string) error {
+func saveDirectQueryToCSV(payloadJSON, filePath string) error {
 	file, err := os.Create(filePath)
 	if err != nil {
-		return fmt.Errorf("no se pudo crear el archivo: %w", err)
+		return fmt.Errorf("could not create file: %w", err)
 	}
 	defer file.Close()
 
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	// Retrieve dynamic headers from the JSON
+	columnsResult := gjson.Get(payloadJSON, "columns.#.name")
+	var headers []string
+	for _, name := range columnsResult.Array() {
+		headers = append(headers, name.String())
+	}
+
+	if err := writer.Write(headers); err != nil {
+		return fmt.Errorf("could not write header: %w", err)
+	}
+
+	dataResult := gjson.Get(payloadJSON, "data")
+	dataResult.ForEach(func(key, row gjson.Result) bool {
+		var record []string
+		for _, header := range headers {
+			value := row.Get(header)
+			record = append(record, value.String())
+		}
+		if err := writer.Write(record); err != nil {
+			log.Printf("Error writing row: %v", err)
+		}
+		return true
+	})
+	return writer.Error()
+}
+
+func saveToCSV(payloadJSON, filePath, empresa, region, aor string) error {
+	fmt.Printf("AOR\t%s\tEMPRESA:\t%s\tREGION:\t%s", aor, empresa, region)
+	file, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("could not create file: %w", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
 	columnsResult := gjson.Get(payloadJSON, "columns.#.name")
 	var dynamicHeaders []string
 	for _, name := range columnsResult.Array() {
 		dynamicHeaders = append(dynamicHeaders, name.String())
 	}
 
-	// Combine constant headers with dynamic ones
 	headers := append([]string{"EMPRESA", "REGION", "AOR"}, dynamicHeaders...)
-
-	// Write the full header row
 	if err := writer.Write(headers); err != nil {
-		return fmt.Errorf("no se pudo escribir la cabecera: %w", err)
+		return fmt.Errorf("could not write header: %w", err)
 	}
 
-	// Process each data row
 	dataResult := gjson.Get(payloadJSON, "data")
 	dataResult.ForEach(func(key, row gjson.Result) bool {
-		// Start each record with the constant values
 		record := []string{empresa, region, aor}
-
-		// Append the dynamic values from the JSON row
 		for _, header := range dynamicHeaders {
 			value := row.Get(header)
 			record = append(record, value.String())
 		}
-
 		if err := writer.Write(record); err != nil {
-			log.Printf("Error al escribir la fila: %v", err)
+			log.Printf("Error writing row: %v", err)
 		}
 		return true
 	})
-
 	return writer.Error()
 }
 
 func ParsearRuta(path string) (empresa, region, b1, b2, b3 string, err error) {
-	// Divide la cadena usando el separador "/"
+	if path == "" {
+		return "", "", "", "", "", fmt.Errorf("path is empty")
+	}
 	parts := strings.Split(path, "/")
-
-	// Valida que el número de partes sea exactamente 5
 	if len(parts) != 5 {
-		return "", "", "", "", "", fmt.Errorf("la ruta no tiene el formato esperado, se esperaban 5 partes, pero se encontraron %d", len(parts))
+		return "", "", "", "", "", fmt.Errorf("path does not have the expected format; expected 5 parts, but found %d", len(parts))
 	}
 
 	empresa = parts[0]
@@ -261,7 +302,6 @@ func ParsearRuta(path string) (empresa, region, b1, b2, b3 string, err error) {
 	return empresa, region, b1, b2, b3, nil
 }
 
-// readStringInput is a helper function to read a trimmed string from the user.
 func readStringInput(prompt string) string {
 	fmt.Print(prompt)
 	reader := bufio.NewReader(os.Stdin)
