@@ -1,4 +1,4 @@
-module quindar
+module goScadaSur
 
 go 1.24.5
 
