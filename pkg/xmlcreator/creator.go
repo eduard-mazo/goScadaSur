@@ -15,7 +15,7 @@ import (
 )
 
 // ===================================================================================
-// 1. DEFINICIÓN DE ESTRUCTURAS PARA EL XML (Sin cambios)
+// 1. DEFINICIÓN DE ESTRUCTURAS PARA EL XML
 // ===================================================================================
 
 type ElementDef struct {
@@ -85,6 +85,17 @@ type Terminal struct {
 	EquipEnd string `json:"EquipEnd,omitempty" xml:"EquipEnd,attr"`
 }
 
+type Link_TerminalMeasuredByMeasurement struct {
+	XMLName xml.Name `xml:"Link_TerminalMeasuredByMeasurement"`
+	PathB   string   `xml:"PathB,attr"`
+}
+
+type LinkedTerminal struct {
+	XMLName xml.Name `xml:"Terminal"`
+	Name    string   `xml:"Name,attr"`
+	Links   []Link_TerminalMeasuredByMeasurement
+}
+
 type XDF struct {
 	XMLName   xml.Name  `xml:"XDF"`
 	Lang      string    `xml:"xml:lang,attr"`
@@ -93,7 +104,7 @@ type XDF struct {
 }
 
 type Instances struct {
-	Parent Parent `xml:"Parent"`
+	Parents []Parent `xml:"Parent"`
 }
 
 type Parent struct {
@@ -121,19 +132,17 @@ type Link_IfsPointLinksToInfo struct {
 }
 
 // ===================================================================================
-// 2. LÓGICA PRINCIPAL DEL PROGRAMA (Refactorizada)
+// 2. LÓGICA PRINCIPAL DEL PROGRAMA
 // ===================================================================================
 
 const (
 	xmlLang          = "EN"
 	xmlVersion       = "2.0.00"
-	templateFilePath = "templates.json" // Nombre del archivo de plantillas
+	templateFilePath = "templates.json"
 )
 
-// Variable global para almacenar las plantillas cargadas
 var elementDB map[string]ElementDef
 
-// deepCopy crea una copia profunda de un ElementDef para evitar modificar la plantilla original.
 func deepCopy(elementDef ElementDef) (ElementDef, error) {
 	var copiedDef ElementDef
 	bytes, err := json.Marshal(elementDef)
@@ -144,7 +153,6 @@ func deepCopy(elementDef ElementDef) (ElementDef, error) {
 	return copiedDef, err
 }
 
-// loadElementDB carga las plantillas de elementos desde un archivo JSON.
 func loadElementDB(filePath string) (map[string]ElementDef, error) {
 	fileBytes, err := os.ReadFile(filePath)
 	if err != nil {
@@ -159,14 +167,12 @@ func loadElementDB(filePath string) (map[string]ElementDef, error) {
 }
 
 func CreateXML(payloadJSON, empresa, region, aor string) error {
-	// --- 1. Cargar plantillas de elementos desde archivo externo ---
 	var err error
 	elementDB, err = loadElementDB(templateFilePath)
 	if err != nil {
 		return fmt.Errorf("no se pudieron inicializar las plantillas de elementos: %w", err)
 	}
 
-	// --- 2. Decodificar JSON para capturar Header y Rows ---
 	dataRows, headerMap, err := readCSVFromJSON(payloadJSON, empresa, region, aor)
 	if err != nil {
 		return err
@@ -177,14 +183,12 @@ func CreateXML(payloadJSON, empresa, region, aor string) error {
 		return nil
 	}
 
-	// --- 3. Procesar filas para generar los elementos de ambos XML ---
-	elementsForIMM, elementsForIFS := processRows(dataRows, headerMap)
+	elementsForIMM, breakerName, breakerLinks, elementsForIFS := processRows(dataRows, headerMap)
 
-	// --- 4. Ensamblar y guardar los archivos XML ---
 	firstRow := dataRows[0]
 	b3Value := firstRow[headerMap["B3"]]
 
-	// --- 4a. Determinar el Path para el archivo IFS dinámicamente ---
+	// --- Lógica para el archivo IFS ---
 	var ifsParentPath string
 	dasIPValue := firstRow[headerMap["DASIP"]]
 	switch dasIPValue {
@@ -215,7 +219,6 @@ func CreateXML(payloadJSON, empresa, region, aor string) error {
 	case "22":
 		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0189/DASip13"
 	default:
-		// Fallback por si el valor no es el esperado
 		log.Printf("Advertencia: Valor de DASIP no reconocido ('%s'). Usando 'SCADA/RTU' como path por defecto.", dasIPValue)
 		ifsParentPath = "SCADA/RTU"
 	}
@@ -223,7 +226,13 @@ func CreateXML(payloadJSON, empresa, region, aor string) error {
 	parts := strings.Split(ifsParentPath, "/")
 	log.Printf("Señales pertenecientes a ->\t%s", parts[4])
 
-	// --- 4b. Generar Path para el archivo IMM ---
+	fileNameIFS := b3Value + "_IFS.xml"
+	parentsForIFS := []Parent{{Path: ifsParentPath, Elements: elementsForIFS}}
+	if err := createAndSaveXML(fileNameIFS, parentsForIFS); err != nil {
+		return err
+	}
+
+	// --- Lógica para el archivo IMM ---
 	parentPathIMM := fmt.Sprintf("ELECTRICITY/NETWORK/%s/%s/%s/%s/%s",
 		firstRow[headerMap["EMPRESA"]],
 		firstRow[headerMap["REGION"]],
@@ -232,15 +241,20 @@ func CreateXML(payloadJSON, empresa, region, aor string) error {
 		b3Value,
 	)
 
-	// Crear y guardar el archivo IMM
-	fileNameIMM := b3Value + "_IMM.xml"
-	if err := createAndSaveXML(fileNameIMM, parentPathIMM, elementsForIMM); err != nil {
-		return err
+	mainParentIMM := Parent{Path: parentPathIMM, Elements: elementsForIMM}
+	parentsForIMM := []Parent{mainParentIMM}
+
+	if len(breakerLinks) > 0 {
+		breakerParentPath := fmt.Sprintf("%s/%s", parentPathIMM, breakerName)
+		breakerParent := Parent{
+			Path:     breakerParentPath,
+			Elements: breakerLinks,
+		}
+		parentsForIMM = append(parentsForIMM, breakerParent)
 	}
 
-	// Crear y guardar el archivo IFS usando el path dinámico
-	fileNameIFS := b3Value + "_IFS.xml"
-	if err := createAndSaveXML(fileNameIFS, ifsParentPath, elementsForIFS); err != nil {
+	fileNameIMM := b3Value + "_IMM.xml"
+	if err := createAndSaveXML(fileNameIMM, parentsForIMM); err != nil {
 		return err
 	}
 
@@ -252,31 +266,24 @@ func readCSVFromJSON(payloadJSON, empresa, region, aor string) ([][]string, map[
 	if !gjson.Valid(payloadJSON) {
 		return nil, nil, errors.New("payloadJSON no es un JSON válido")
 	}
-
 	constantHeaders := []string{"EMPRESA", "REGION", "AOR"}
 	dynamicHeadersResult := gjson.Get(payloadJSON, "columns.#.name")
-
 	if !dynamicHeadersResult.Exists() || !dynamicHeadersResult.IsArray() {
 		return nil, nil, errors.New("el campo 'columns' no se encontró o no es un array válido en el JSON")
 	}
-
 	var dynamicHeaders []string
 	for _, nameResult := range dynamicHeadersResult.Array() {
 		dynamicHeaders = append(dynamicHeaders, nameResult.String())
 	}
-
 	headers := append(constantHeaders, dynamicHeaders...)
-
 	headerMap := make(map[string]int)
 	for i, name := range headers {
 		headerMap[name] = i
 	}
-
 	dataResult := gjson.Get(payloadJSON, "data")
 	if !dataResult.Exists() || !dataResult.IsArray() {
 		return nil, nil, errors.New("el campo 'data' no se encontró o no es un array válido en el JSON")
 	}
-
 	var records [][]string
 	dataResult.ForEach(func(key, row gjson.Result) bool {
 		if !row.IsObject() {
@@ -284,7 +291,6 @@ func readCSVFromJSON(payloadJSON, empresa, region, aor string) ([][]string, map[
 			return true
 		}
 		record := []string{empresa, region, aor}
-
 		for _, header := range dynamicHeaders {
 			value := row.Get(header)
 			record = append(record, value.String())
@@ -292,41 +298,40 @@ func readCSVFromJSON(payloadJSON, empresa, region, aor string) ([][]string, map[
 		records = append(records, record)
 		return true
 	})
-
 	return records, headerMap, nil
 }
 
-// processRows itera sobre los registros para generar las listas de elementos para los archivos IMM e IFS.
-func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM []any, elementsForIFS []any) {
+func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM []any, breakerName string, breakerLinks []any, elementsForIFS []any) {
+	var cbRowData []string // Almacena la fila de datos del "CB" para procesarla al final
+
+	// --- PRIMERA PASADA: Procesar cada fila para generar elementos IFS e IMM base ---
 	for _, row := range dataRows {
-		// Usar la clave original para búsquedas en el mapa de plantillas
 		elementKey := row[headerMap["ELEMENT"]]
 		template, isTemplateFound := elementDB[elementKey]
-		isBreaker := isTemplateFound && template.Breaker != nil
 
-		// --- Paso 1: Generación del elemento IFS ---
-		var ifsNameElementPart string
-		var ifsPathElementPart string
+		// Esta variable es para la lógica general, como la nomenclatura del IFS.
+		isBreakerType := (isTemplateFound && template.Breaker != nil) || elementKey == "CB"
 
-		// El nombre para el IMM y el nombre para el IFS pueden ser diferentes
-		var displayName string
+		// MODIFICADO: Se asigna cbRowData solo si el elemento es específicamente "CB".
+		// Este es el único disparador para la creación de los links.
+		if elementKey == "CB" {
+			cbRowData = row
+		}
 
+		displayName := elementKey
 		if row[headerMap["INFO"]] == "MvMoment" {
 			displayName = strings.ReplaceAll(elementKey, "_", " ")
-		} else {
-			displayName = elementKey
 		}
 
-		if isBreaker || row[headerMap["ELEMENT"]] == "CB" {
-			// Nomenclatura para Breaker: repetir el nombre del elemento
+		// --- Paso 1: Generación del elemento IFS ---
+		var ifsNameElementPart, ifsPathElementPart string
+		if isBreakerType { // Usa la lógica general de breaker para el nombrado
 			ifsNameElementPart = fmt.Sprintf("%s_%s", displayName, displayName)
-			ifsPathElementPart = fmt.Sprintf("%s/%s", displayName, displayName) // El path usa la llave original
+			ifsPathElementPart = fmt.Sprintf("%s/%s", displayName, displayName)
 		} else {
 			ifsNameElementPart = displayName
-			ifsPathElementPart = displayName // El path usa la llave original
+			ifsPathElementPart = displayName
 		}
-
-		// Determinar sufijo y valor SBO
 		suffix := "M"
 		if row[headerMap["TYPE"]] == "SP_SC" {
 			suffix = "MC"
@@ -335,7 +340,6 @@ func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM 
 		if sboValue := row[headerMap["SBO"]]; sboValue != "" {
 			sbo = sboValue
 		}
-
 		ifsPoint := &IfsPoint{
 			Name: fmt.Sprintf("%s_%s_%s_%s_%s_%s",
 				row[headerMap["B1"]], row[headerMap["B2"]], row[headerMap["B3"]],
@@ -362,18 +366,15 @@ func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM 
 			log.Printf("Advertencia: La llave '%s' no fue encontrada en la plantilla. Se omite para la generación IMM.", elementKey)
 			continue
 		}
-
 		instance, err := deepCopy(template)
 		if err != nil {
 			log.Printf("Error al copiar la plantilla para la llave '%s': %v. Se omite.", elementKey, err)
 			continue
 		}
-
 		aor := row[headerMap["AOR"]]
 		var elementToAppend any
-
 		if instance.Analog != nil {
-			instance.Analog.Name = displayName // Usar el nombre con espacios si aplica
+			instance.Analog.Name = displayName
 			instance.Analog.AreaOfResponsibilityId = aor
 			elementToAppend = instance.Analog
 		} else if instance.Discrete != nil {
@@ -384,22 +385,52 @@ func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM 
 			instance.Breaker.Name = displayName
 			instance.Breaker.AreaOfResponsibilityId = aor
 			if instance.Breaker.Discrete != nil {
-				instance.Breaker.Discrete.Name = displayName // También actualizar el discreto anidado
+				instance.Breaker.Discrete.Name = displayName
 				instance.Breaker.Discrete.AreaOfResponsibilityId = aor
 			}
 			elementToAppend = instance.Breaker
 		}
-
 		if elementToAppend != nil {
 			elementsForIMM = append(elementsForIMM, elementToAppend)
 		}
 	}
+
+	// --- LÓGICA DE ENLACES: Se ejecuta solo si se encontró un elemento "CB" ---
+	if cbRowData != nil {
+		targetMeasurements := map[string]bool{"P": true, "Q": true, "I_S": true, "U_RS": true}
+		var links []Link_TerminalMeasuredByMeasurement
+
+		basePathB := fmt.Sprintf("ELECTRICITY/NETWORK/%s/%s/%s/%s/%s",
+			cbRowData[headerMap["EMPRESA"]], cbRowData[headerMap["REGION"]],
+			cbRowData[headerMap["B1"]], cbRowData[headerMap["B2"]], cbRowData[headerMap["B3"]])
+
+		for _, row := range dataRows {
+			elementKey := row[headerMap["ELEMENT"]]
+			if targetMeasurements[elementKey] {
+				displayName := strings.ReplaceAll(elementKey, "_", " ")
+				link := Link_TerminalMeasuredByMeasurement{
+					PathB: fmt.Sprintf("%s/%s", basePathB, displayName),
+				}
+				links = append(links, link)
+			}
+		}
+
+		if len(links) > 0 {
+			linkedTerminal := LinkedTerminal{
+				Name:  "T1",
+				Links: links,
+			}
+			breakerLinks = append(breakerLinks, linkedTerminal)
+			breakerName = "CB" // El nombre para el Path es estático "CB"
+		}
+	}
+
 	return
 }
 
-func createAndSaveXML(fileName, parentPath string, elements []any) error {
+func createAndSaveXML(fileName string, parents []Parent) error {
 	// (Esta función no requiere cambios)
-	if len(elements) == 0 {
+	if len(parents) == 0 || (len(parents[0].Elements) == 0 && (len(parents) == 1 || len(parents[1].Elements) == 0)) {
 		log.Printf("Información: No se generará el archivo '%s' porque no hay elementos para incluir.", fileName)
 		return nil
 	}
@@ -408,10 +439,7 @@ func createAndSaveXML(fileName, parentPath string, elements []any) error {
 		Lang:    xmlLang,
 		Version: xmlVersion,
 		Instances: Instances{
-			Parent: Parent{
-				Path:     parentPath,
-				Elements: elements,
-			},
+			Parents: parents,
 		},
 	}
 
