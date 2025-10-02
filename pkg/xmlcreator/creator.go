@@ -30,6 +30,7 @@ type Analog struct {
 	Name                   string       `json:"Name,omitempty" xml:"Name,attr"`
 	UnitOfMeasure          string       `json:"UnitOfMeasure,omitempty" xml:"UnitOfMeasure,attr"`
 	ElementType            string       `json:"ElementType,omitempty" xml:"ElementType,attr"`
+	Phases                 string       `json:"Phases,omitempty" xml:"Phases,attr"`
 	ElementName            string       `json:"ElementName,omitempty" xml:"ElementName,attr"`
 	MeasurementType        string       `json:"MeasurementType,omitempty" xml:"MeasurementType,attr"`
 	AreaOfResponsibilityId string       `json:"AreaOfResponsibilityId,omitempty" xml:"AreaOfResponsibilityId,attr"`
