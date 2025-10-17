@@ -43,6 +43,7 @@ type AnalogValue struct {
 	Archive  string `json:"Archive,omitempty" xml:"Archive,attr"`
 	InfoName string `json:"InfoName,omitempty" xml:"InfoName,attr"`
 }
+
 type AnalogInfo struct {
 	Name     string `json:"Name,omitempty" xml:"Name,attr"`
 	Value    string `json:"Value,omitempty" xml:"Value,attr"`
@@ -219,6 +220,8 @@ func CreateXML(payloadJSON, empresa, region, aor string) error {
 		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0157/DASip12"
 	case "22":
 		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0189/DASip13"
+	case "23":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0191/DASip14"
 	default:
 		log.Printf("Advertencia: Valor de DASIP no reconocido ('%s'). Usando 'SCADA/RTU' como path por defecto.", dasIPValue)
 		ifsParentPath = "SCADA/RTU"
