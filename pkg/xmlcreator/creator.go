@@ -29,6 +29,8 @@ type Analog struct {
 	XMLName                xml.Name     `json:"-" xml:"Analog"`
 	Name                   string       `json:"Name,omitempty" xml:"Name,attr"`
 	UnitOfMeasure          string       `json:"UnitOfMeasure,omitempty" xml:"UnitOfMeasure,attr"`
+	WeightingSE            string       `json:"WeightingSE,omitempty" xml:"WeightingSE,attr"`
+	Multiplier             string       `json:"Multiplier,omitempty" xml:"Multiplier,attr"`
 	ElementType            string       `json:"ElementType,omitempty" xml:"ElementType,attr"`
 	Phases                 string       `json:"Phases,omitempty" xml:"Phases,attr"`
 	ElementName            string       `json:"ElementName,omitempty" xml:"ElementName,attr"`
