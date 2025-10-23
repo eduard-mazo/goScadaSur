@@ -224,6 +224,8 @@ func CreateXML(payloadJSON, empresa, region, aor string) error {
 		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0189/DASip13"
 	case "23":
 		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0191/DASip14"
+	case "24":
+		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0193/DASip15"
 	default:
 		log.Printf("Advertencia: Valor de DASIP no reconocido ('%s'). Usando 'SCADA/RTU' como path por defecto.", dasIPValue)
 		ifsParentPath = "SCADA/RTU"
