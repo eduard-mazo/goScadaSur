@@ -34,32 +34,29 @@ type CSharpInput struct {
 	B3       string `json:"b3"`
 }
 
-var (
-	user, password, host, path, aor string
-)
+var user, password, host, path, aor string
 
 func main() {
-	var rootCmd = &cobra.Command{
+	rootCmd := &cobra.Command{
 		Use:   "launcher",
-		Short: "Launcher to execute queries against the Survalent database.",
+		Short: "Gestion base de datos SURVALENT",
 	}
 
 	rootCmd.PersistentFlags().StringVarP(&host, "host", "i", "", "Host IP address")
 	rootCmd.PersistentFlags().StringVarP(&user, "user", "u", "", "Database username")
 	rootCmd.PersistentFlags().StringVarP(&password, "password", "p", "", "Database password")
 
-	var stationSearchCmd = &cobra.Command{
+	stationSearchCmd := &cobra.Command{
 		Use:   "station-search",
-		Short: "Searches for a station by name (provided with --path) and retrieves its signals.",
+		Short: "Busca una estación por el nombre (suministrado por el --path) y retorna sus señales.",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			executeCommand("station_search", "", path, aor)
 		},
 	}
 
-	stationSearchCmd.Flags().StringVar(&path, "path", "", "System path (e.g., B1/B2/B3)")
-	stationSearchCmd.Flags().StringVar(&aor, "aor", "", "Area of responsibility")
-	// FIX: Added error handling for MarkFlagRequired.
+	stationSearchCmd.Flags().StringVar(&path, "path", "", "Path del sistema (e.j., B1/B2/B3)")
+	stationSearchCmd.Flags().StringVar(&aor, "aor", "", "Area of Responsibility")
 	if err := stationSearchCmd.MarkFlagRequired("path"); err != nil {
 		log.Fatalf("[FATAL] Error marking 'path' flag as required: %v", err)
 	}
@@ -67,19 +64,43 @@ func main() {
 		log.Fatalf("[FATAL] Error marking 'aor' flag as required: %v", err)
 	}
 
-	var directQueryCmd = &cobra.Command{
+	fromCSVCmd := &cobra.Command{
+		Use:   "csv-xml",
+		Short: "Crea los XML a partir de un CSV",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			createFromCSV(path)
+		},
+	}
+
+	fromCSVCmd.Flags().StringVar(&path, "path", "", "Ruta del csv")
+	fromCSVCmd.Flags().StringVar(&aor, "aor", "", "Area de responsabilidad")
+	if err := fromCSVCmd.MarkFlagRequired("path"); err != nil {
+		log.Fatalf("[FATAL] Error marking 'path' flag as required: %v", err)
+	}
+	if err := fromCSVCmd.MarkFlagRequired("aor"); err != nil {
+		log.Fatalf("[FATAL] Error marking 'aor' flag as required: %v", err)
+	}
+
+	directQueryCmd := &cobra.Command{
 		Use:   "direct-query [SQL query]",
-		Short: "Executes a SQL query directly on the database.",
+		Short: "Ejecuta una query directamente la en la base de datos de SURVALENT",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			executeCommand("direct_query", args[0], "", "")
 		},
 	}
 
-	rootCmd.AddCommand(stationSearchCmd, directQueryCmd)
+	rootCmd.AddCommand(stationSearchCmd, directQueryCmd, fromCSVCmd)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println("[ERROR] Command execution failed:", err)
 		os.Exit(1)
+	}
+}
+
+func createFromCSV(path string) {
+	if err := xmlcreator.CreateXML(path); err != nil {
+		log.Fatalf("[FATAL]\tError creating XML: %v", err)
 	}
 }
 
@@ -92,10 +113,11 @@ func executeCommand(mode, query, path, aor string) {
 	if host == "" {
 		host = readStringInput("[INPUT]\tHost: ")
 	}
-	// FIX: Removed ineffectual assignment to 'path' as it's a required flag.
+
 	if user == "" {
 		user = readStringInput("[INPUT]\tUser: ")
 	}
+
 	if password == "" {
 		fmt.Print("[INPUT]\tPassword: ")
 		bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -140,7 +162,7 @@ func executeCommand(mode, query, path, aor string) {
 	var wg sync.WaitGroup
 	var outBuf, errBuf bytes.Buffer
 	wg.Add(2)
-	// FIX: Added error handling for io.Copy.
+
 	go func() {
 		defer wg.Done()
 		if _, err := io.Copy(&outBuf, stdoutPipe); err != nil {
@@ -199,14 +221,13 @@ func executeCommand(mode, query, path, aor string) {
 		fmt.Printf("\n[OK]\tDirect query data saved to '%s'.\n", filename)
 
 	case "station_search":
-		fmt.Printf("[DEBUG] AOR:\t%s\n", aor)
-		filename := time.Now().Format("20060102_150405") + "_" + b3 + "_" + ".csv"
+		filename := time.Now().Format("20060102_150405") + "_" + b3 + ".csv"
 		if err := saveToCSV(payloadJSON, filename, empresa, region, aor); err != nil {
 			log.Fatalf("[FATAL]\tError saving to CSV: %v", err)
 		}
 		fmt.Printf("\n[OK]\tData saved successfully to '%s'.\n", filename)
 
-		if err := xmlcreator.CreateXML(payloadJSON, empresa, region, aor); err != nil {
+		if err := xmlcreator.CreateXML(filename); err != nil {
 			log.Fatalf("[FATAL]\tError creating XML: %v", err)
 		}
 	}

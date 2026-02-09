@@ -3,15 +3,13 @@ package xmlcreator
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"strings"
-
-	"github.com/tidwall/gjson"
 )
 
 // ===================================================================================
@@ -147,6 +145,7 @@ const (
 
 var elementDB map[string]ElementDef
 
+// deepCopy y loadElementDB se mantienen igual
 func deepCopy(elementDef ElementDef) (ElementDef, error) {
 	var copiedDef ElementDef
 	bytes, err := json.Marshal(elementDef)
@@ -170,32 +169,63 @@ func loadElementDB(filePath string) (map[string]ElementDef, error) {
 	return db, nil
 }
 
-func CreateXML(payloadJSON, empresa, region, aor string) error {
+func CreateXML(csvFilePath string) error {
 	var err error
 	elementDB, err = loadElementDB(templateFilePath)
 	if err != nil {
 		return fmt.Errorf("no se pudieron inicializar las plantillas de elementos: %w", err)
 	}
 
-	dataRows, headerMap, err := readCSVFromJSON(payloadJSON, empresa, region, aor)
+	// 2. Leer el CSV desde el disco
+	log.Printf("Leyendo datos desde CSV: %s", csvFilePath)
+	dataRows, headerMap, err := readCSV(csvFilePath)
 	if err != nil {
 		return err
 	}
 
 	if len(dataRows) == 0 {
-		log.Println("Advertencia: No se encontraron datos en el payload JSON para procesar.")
+		log.Println("Advertencia: El CSV no contiene datos para procesar.")
 		return nil
 	}
 
+	// 3. Procesar filas
 	elementsForIMM, breakerName, breakerLinks, elementsForIFS := processRows(dataRows, headerMap)
 
 	firstRow := dataRows[0]
+
+	// Aseguramos que existan las columnas clave creadas en main.go
+	if _, ok := headerMap["B3"]; !ok {
+		return fmt.Errorf("columna B3 no encontrada en CSV")
+	}
+	if _, ok := headerMap["EMPRESA"]; !ok {
+		return fmt.Errorf("columna EMPRESA no encontrada en CSV")
+	}
+	if _, ok := headerMap["REGION"]; !ok {
+		return fmt.Errorf("columna REGION no encontrada en CSV")
+	}
+	if _, ok := headerMap["B1"]; !ok {
+		return fmt.Errorf("columna B1 no encontrada en CSV")
+	}
+	if _, ok := headerMap["B2"]; !ok {
+		return fmt.Errorf("columna B2 no encontrada en CSV")
+	}
+
 	b3Value := firstRow[headerMap["B3"]]
+	empresa := firstRow[headerMap["EMPRESA"]]
+	region := firstRow[headerMap["REGION"]]
+	b1 := firstRow[headerMap["B1"]]
+	b2 := firstRow[headerMap["B2"]]
 
 	// --- Lógica para el archivo IFS ---
 	var ifsParentPath string
-	dasIPValue := firstRow[headerMap["DASIP"]]
-	switch dasIPValue {
+
+	// Validar si existe DASIP, si no, usar default
+	dasIPVal := ""
+	if idx, ok := headerMap["DASIP"]; ok {
+		dasIPVal = firstRow[idx]
+	}
+
+	switch dasIPVal {
 	case "1":
 		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0133/DASip1"
 	case "6":
@@ -227,12 +257,14 @@ func CreateXML(payloadJSON, empresa, region, aor string) error {
 	case "24":
 		ifsParentPath = "PI/IFS/EPM_P1_1/Chan0193/DASip15"
 	default:
-		log.Printf("Advertencia: Valor de DASIP no reconocido ('%s'). Usando 'SCADA/RTU' como path por defecto.", dasIPValue)
+		log.Printf("Advertencia: Valor de DASIP no reconocido ('%s'). Usando 'SCADA/RTU' como path por defecto.", dasIPVal)
 		ifsParentPath = "SCADA/RTU"
 	}
 
 	parts := strings.Split(ifsParentPath, "/")
-	log.Printf("Señales pertenecientes a ->\t%s", parts[4])
+	if len(parts) > 4 {
+		log.Printf("Señales pertenecientes a ->\t%s", parts[4])
+	}
 
 	fileNameIFS := b3Value + "_IFS.xml"
 	parentsForIFS := []Parent{{Path: ifsParentPath, Elements: elementsForIFS}}
@@ -242,10 +274,10 @@ func CreateXML(payloadJSON, empresa, region, aor string) error {
 
 	// --- Lógica para el archivo IMM ---
 	parentPathIMM := fmt.Sprintf("ELECTRICITY/NETWORK/%s/%s/%s/%s/%s",
-		firstRow[headerMap["EMPRESA"]],
-		firstRow[headerMap["REGION"]],
-		firstRow[headerMap["B1"]],
-		firstRow[headerMap["B2"]],
+		empresa,
+		region,
+		b1,
+		b2,
 		b3Value,
 	)
 
@@ -269,59 +301,61 @@ func CreateXML(payloadJSON, empresa, region, aor string) error {
 	return nil
 }
 
-func readCSVFromJSON(payloadJSON, empresa, region, aor string) ([][]string, map[string]int, error) {
-	// (Esta función no requiere cambios)
-	if !gjson.Valid(payloadJSON) {
-		return nil, nil, errors.New("payloadJSON no es un JSON válido")
+// Nueva función para leer CSV estándar
+func readCSV(filePath string) ([][]string, map[string]int, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("no se pudo abrir el archivo CSV: %w", err)
 	}
-	constantHeaders := []string{"EMPRESA", "REGION", "AOR"}
-	dynamicHeadersResult := gjson.Get(payloadJSON, "columns.#.name")
-	if !dynamicHeadersResult.Exists() || !dynamicHeadersResult.IsArray() {
-		return nil, nil, errors.New("el campo 'columns' no se encontró o no es un array válido en el JSON")
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	// Permitir número variable de campos si es necesario, aunque idealmente debe ser consistente
+	reader.FieldsPerRecord = -1
+
+	rawRows, err := reader.ReadAll()
+	if err != nil {
+		return nil, nil, fmt.Errorf("error leyendo el contenido del CSV: %w", err)
 	}
-	var dynamicHeaders []string
-	for _, nameResult := range dynamicHeadersResult.Array() {
-		dynamicHeaders = append(dynamicHeaders, nameResult.String())
+
+	if len(rawRows) < 2 {
+		return nil, nil, fmt.Errorf("el archivo CSV debe tener al menos cabecera y una fila de datos")
 	}
-	headers := append(constantHeaders, dynamicHeaders...)
+
+	headers := rawRows[0]
+	dataRows := rawRows[1:]
+
 	headerMap := make(map[string]int)
-	for i, name := range headers {
-		headerMap[name] = i
+	for i, h := range headers {
+		headerMap[h] = i
 	}
-	dataResult := gjson.Get(payloadJSON, "data")
-	if !dataResult.Exists() || !dataResult.IsArray() {
-		return nil, nil, errors.New("el campo 'data' no se encontró o no es un array válido en el JSON")
-	}
-	var records [][]string
-	dataResult.ForEach(func(key, row gjson.Result) bool {
-		if !row.IsObject() {
-			log.Printf("Advertencia: Se encontró una fila no-objeto. Saltando.")
-			return true
-		}
-		record := []string{empresa, region, aor}
-		for _, header := range dynamicHeaders {
-			value := row.Get(header)
-			record = append(record, value.String())
-		}
-		records = append(records, record)
-		return true
-	})
-	return records, headerMap, nil
+
+	return dataRows, headerMap, nil
 }
 
 func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM []any, breakerName string, breakerLinks []any, elementsForIFS []any) {
-	var cbRowData []string // Almacena la fila de datos del "CB" para procesarla al final
+	var cbRowData []string
 
-	// --- PRIMERA PASADA: Procesar cada fila para generar elementos IFS e IMM base ---
+	// Validaciones de columnas mínimas requeridas para evitar panic
+	requiredCols := []string{"ELEMENT", "INFO", "TYPE", "B1", "B2", "B3", "AOR", "EMPRESA", "REGION"}
+	for _, col := range requiredCols {
+		if _, ok := headerMap[col]; !ok {
+			log.Printf("[ERROR CRITICO] Columna requerida '%s' no encontrada en el CSV", col)
+			return
+		}
+	}
+
 	for _, row := range dataRows {
+		// Seguridad por si alguna fila está incompleta
+		if len(row) <= headerMap["ELEMENT"] {
+			continue
+		}
+
 		elementKey := row[headerMap["ELEMENT"]]
 		template, isTemplateFound := elementDB[elementKey]
 
-		// Esta variable es para la lógica general, como la nomenclatura del IFS.
 		isBreakerType := (isTemplateFound && template.Breaker != nil) || elementKey == "CB"
 
-		// MODIFICADO: Se asigna cbRowData solo si el elemento es específicamente "CB".
-		// Este es el único disparador para la creación de los links.
 		if elementKey == "CB" {
 			cbRowData = row
 		}
@@ -333,33 +367,51 @@ func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM 
 
 		// --- Paso 1: Generación del elemento IFS ---
 		var ifsNameElementPart, ifsPathElementPart string
-		if isBreakerType { // Usa la lógica general de breaker para el nombrado
+		if isBreakerType {
 			ifsNameElementPart = fmt.Sprintf("%s_%s", displayName, displayName)
 			ifsPathElementPart = fmt.Sprintf("%s/%s", displayName, displayName)
 		} else {
 			ifsNameElementPart = displayName
 			ifsPathElementPart = displayName
 		}
+
 		suffix := "M"
 		if row[headerMap["TYPE"]] == "SP_SC" {
 			suffix = "MC"
 		}
+
 		sbo := "0"
-		if sboValue := row[headerMap["SBO"]]; sboValue != "" {
-			sbo = sboValue
+		if idx, ok := headerMap["SBO"]; ok && len(row) > idx {
+			if sboValue := row[idx]; sboValue != "" {
+				sbo = sboValue
+			}
 		}
+
+		// Helpers seguros para columnas que podrían no existir o estar vacías
+		getVal := func(col string) string {
+			if idx, ok := headerMap[col]; ok && len(row) > idx {
+				return row[idx]
+			}
+			return "0" // Default safe value
+		}
+
+		conTypeVal := "0"
+		if row[headerMap["TYPE"]] == "SP_SC" {
+			conTypeVal = "45"
+		}
+
 		ifsPoint := &IfsPoint{
 			Name: fmt.Sprintf("%s_%s_%s_%s_%s_%s",
 				row[headerMap["B1"]], row[headerMap["B2"]], row[headerMap["B3"]],
 				ifsNameElementPart, row[headerMap["INFO"]], suffix),
-			MonAddrHigh:   row[headerMap["MHB"]],
-			MonAddrMiddle: row[headerMap["MMB"]],
-			MonAddrLow:    row[headerMap["MLB"]],
+			MonAddrHigh:   getVal("MHB"),
+			MonAddrMiddle: getVal("MMB"),
+			MonAddrLow:    getVal("MLB"),
 			MonType:       "0",
-			ConAddrHigh:   row[headerMap["CHB"]],
-			ConAddrMiddle: row[headerMap["CMB"]],
-			ConAddrLow:    row[headerMap["CLB"]],
-			ConType:       map[bool]string{true: "45", false: "0"}[row[headerMap["TYPE"]] == "SP_SC"],
+			ConAddrHigh:   getVal("CHB"),
+			ConAddrMiddle: getVal("CMB"),
+			ConAddrLow:    getVal("CLB"),
+			ConType:       conTypeVal,
 			SelectBefore:  sbo,
 			Link_IfsPointLinksToInfo: &Link_IfsPointLinksToInfo{
 				PathB: fmt.Sprintf("ELECTRICITY/NETWORK/%s/%s/%s/%s/%s/%s/%s",
@@ -371,14 +423,15 @@ func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM 
 
 		// --- Paso 2: Generación del elemento IMM ---
 		if !isTemplateFound {
-			log.Printf("Advertencia: La llave '%s' no fue encontrada en la plantilla. Se omite para la generación IMM.", elementKey)
+			log.Printf("Advertencia: La llave '%s' no fue encontrada en la plantilla...", elementKey)
 			continue
 		}
 		instance, err := deepCopy(template)
 		if err != nil {
-			log.Printf("Error al copiar la plantilla para la llave '%s': %v. Se omite.", elementKey, err)
+			log.Printf("Error al copiar plantilla: %v", err)
 			continue
 		}
+
 		aor := row[headerMap["AOR"]]
 		var elementToAppend any
 		if instance.Analog != nil {
@@ -403,7 +456,7 @@ func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM 
 		}
 	}
 
-	// --- LÓGICA DE ENLACES: Se ejecuta solo si se encontró un elemento "CB" ---
+	// --- LÓGICA DE ENLACES ---
 	if cbRowData != nil {
 		targetMeasurements := map[string]bool{"P": true, "Q": true, "I_S": true, "U_RS": true}
 		var links []Link_TerminalMeasuredByMeasurement
@@ -413,6 +466,11 @@ func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM 
 			cbRowData[headerMap["B1"]], cbRowData[headerMap["B2"]], cbRowData[headerMap["B3"]])
 
 		for _, row := range dataRows {
+			// Check bounds
+			if len(row) <= headerMap["ELEMENT"] {
+				continue
+			}
+
 			elementKey := row[headerMap["ELEMENT"]]
 			if targetMeasurements[elementKey] {
 				displayName := strings.ReplaceAll(elementKey, "_", " ")
@@ -429,7 +487,7 @@ func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM 
 				Links: links,
 			}
 			breakerLinks = append(breakerLinks, linkedTerminal)
-			breakerName = "CB" // El nombre para el Path es estático "CB"
+			breakerName = "CB"
 		}
 	}
 
@@ -437,9 +495,8 @@ func processRows(dataRows [][]string, headerMap map[string]int) (elementsForIMM 
 }
 
 func createAndSaveXML(fileName string, parents []Parent) error {
-	// (Esta función no requiere cambios)
 	if len(parents) == 0 || (len(parents[0].Elements) == 0 && (len(parents) == 1 || len(parents[1].Elements) == 0)) {
-		log.Printf("Información: No se generará el archivo '%s' porque no hay elementos para incluir.", fileName)
+		log.Printf("Información: No se generará el archivo '%s' porque no hay elementos.", fileName)
 		return nil
 	}
 
@@ -457,10 +514,10 @@ func createAndSaveXML(fileName string, parents []Parent) error {
 	encoder.Indent("", "    ")
 
 	if err := encoder.Encode(outputStruct); err != nil {
-		return fmt.Errorf("error al codificar el XML para '%s': %w", fileName, err)
+		return fmt.Errorf("error codificando XML '%s': %w", fileName, err)
 	}
 	if err := os.WriteFile(fileName, out.Bytes(), 0644); err != nil {
-		return fmt.Errorf("error al escribir el archivo '%s': %w", fileName, err)
+		return fmt.Errorf("error escribiendo archivo '%s': %w", fileName, err)
 	}
 
 	fmt.Printf("✅ Archivo generado exitosamente: %s\n", fileName)
