@@ -1,0 +1,92 @@
+# ============================================================================
+# Configuración Principal de goScadaSur
+# ============================================================================
+
+# Información de la aplicación
+app:
+  name: "goScadaSur"
+  version: "2.0.0"
+  description: "Sistema de Gestión de Base de Datos SURVALENT"
+
+# Configuración de archivos
+files:
+  # Plantillas de elementos XML
+  templates: "configs/templates.json"
+
+  # Configuración de mapeo DASIP
+  dasip_mapping: "configs/dasip_config.yaml"
+
+  # Directorio para archivos generados
+  output_dir: "output"
+
+  # Formatos de entrada soportados
+  supported_input_formats:
+    - "csv"
+    - "xlsx"
+    - "xls"
+
+# Configuración XML
+xml:
+  lang: "EN"
+  version: "2.0.00"
+  indent: "    " # 4 espacios
+
+# Configuración de logging
+logging:
+  level: "info" # debug, info, warn, error
+  timestamp_format: "2006-01-02 15:04:05"
+
+# Configuración de base de datos C#
+database:
+  # Timeout para conexión (segundos)
+  connection_timeout: 30
+
+  # Path al ejecutable de C#
+  csharp_executable: "./survalentDB.exe"
+
+# Configuración de nombres de archivos de salida
+output:
+  # Formato de timestamp para nombres de archivo
+  timestamp_format: "20060102_150405"
+
+  # Sufijos para archivos generados
+  suffixes:
+    imm: "_IMM.xml"
+    ifs: "_IFS.xml"
+    csv: ".csv"
+
+# Validación de datos
+validation:
+  # Columnas requeridas en CSV/Excel de entrada
+  required_columns:
+    - "ELEMENT"
+    - "INFO"
+    - "TYPE"
+    - "B1"
+    - "B2"
+    - "B3"
+    - "AOR"
+    - "EMPRESA"
+    - "REGION"
+
+  # Columnas opcionales pero recomendadas
+  optional_columns:
+    - "DASIP"
+    - "SBO"
+    - "MLB"
+    - "MMB"
+    - "MHB"
+    - "CLB"
+    - "CMB"
+    - "CHB"
+
+# Configuración de procesamiento
+processing:
+  # Procesamiento paralelo habilitado
+  parallel_enabled: true
+
+  # Número de workers (0 = usar todos los CPUs disponibles)
+  max_workers: 0
+
+  # Tamaño de buffer para lectura de archivos
+  buffer_size: 8192

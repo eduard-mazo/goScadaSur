@@ -1,0 +1,25 @@
+# Configuración de mapeo DASIP a IFS Parent Path
+# Este archivo permite actualizar el mapeo sin modificar el código fuente
+
+# Path por defecto cuando el DASIP no está en el mapeo
+default_path: "SCADA/RTU"
+
+# Mapeo de valores DASIP a rutas IFS
+dasip_mapping:
+  "1": "PI/IFS/EPM_P1_1/Chan0133/DASip1"
+  "6": "PI/IFS/EPM_P1_1/Chan0135/DASip2"
+  "7": "PI/IFS/EPM_P1_1/Chan0137/DASip3"
+  "11": "PI/IFS/EPM_P1_1/Chan0139/DASip4"
+  "12": "PI/IFS/EPM_P1_1/Chan0141/DASip5"
+  "8": "PI/IFS/EPM_P1_1/Chan0143/DASip6"
+  "15": "PI/IFS/EPM_P1_1/Chan0145/DASip7"
+  "9": "PI/IFS/EPM_P1_1/Chan0147/DASip8"
+  "16": "PI/IFS/EPM_P1_1/Chan0173/DASip9"
+  "14": "PI/IFS/EPM_P1_1/Chan0152/DASip10"
+  "18": "PI/IFS/EPM_P1_1/Chan0155/DASip11"
+  "21": "PI/IFS/EPM_P1_1/Chan0157/DASip12"
+  "22": "PI/IFS/EPM_P1_1/Chan0189/DASip13"
+  "23": "PI/IFS/EPM_P1_1/Chan0191/DASip14"
+  "24": "PI/IFS/EPM_P1_1/Chan0193/DASip15"
+  "25": "PI/IFS/EPM_P1_1/Chan0195/DASip16"
+  "26": "PI/IFS/EPM_P1_1/Chan0208/DASip17"
