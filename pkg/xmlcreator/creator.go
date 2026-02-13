@@ -3,24 +3,23 @@ package xmlcreator
 
 import (
 	"fmt"
-	"log"
-	"strings"
-
 	"goScadaSur/pkg/config"
 	"goScadaSur/pkg/fileio"
+	"log"
+	"strings"
 )
 
 // CreateXMLFromFile procesa un archivo (CSV o Excel) y genera archivos XML
 func CreateXMLFromFile(inputFilePath string) error {
 	// Leer datos del archivo
-	log.Printf("📂 Leyendo datos desde: %s", inputFilePath)
+	log.Printf("[INFO] Leyendo datos desde: %s", inputFilePath)
 	_, dataRows, headerMap, err := fileio.ReadData(inputFilePath)
 	if err != nil {
 		return fmt.Errorf("error leyendo archivo: %w", err)
 	}
 
 	if len(dataRows) == 0 {
-		log.Println("⚠️  Advertencia: El archivo no contiene datos para procesar")
+		log.Println("[WARN] El archivo no contiene datos para procesar")
 		return nil
 	}
 
@@ -29,7 +28,7 @@ func CreateXMLFromFile(inputFilePath string) error {
 		return fmt.Errorf("validación de columnas fallida: %w", err)
 	}
 
-	log.Printf("✓ Datos leídos correctamente: %d filas", len(dataRows))
+	log.Printf("[OK] Datos leídos correctamente: %d filas", len(dataRows))
 
 	// Procesar las filas
 	result, err := processRows(dataRows, headerMap)
@@ -47,10 +46,10 @@ func CreateXMLFromFile(inputFilePath string) error {
 
 // ProcessingResult contiene los resultados del procesamiento de filas
 type ProcessingResult struct {
-	ElementsIMM    []any
-	ElementsIFS    []any
-	BreakerName    string
-	BreakerLinks   []any
+	ElementsIMM  []any
+	ElementsIFS  []any
+	BreakerName  string
+	BreakerLinks []any
 }
 
 // processRows procesa todas las filas del archivo de datos
@@ -72,7 +71,7 @@ func processRows(dataRows [][]string, headerMap map[string]int) (*ProcessingResu
 
 		elementKey := fileio.GetCellValue(row, headerMap["ELEMENT"])
 		if elementKey == "" {
-			log.Printf("⚠️  Fila %d: ELEMENT vacío, saltando...", rowIdx+2)
+			log.Printf("[WARN] Fila %d: ELEMENT vacío, saltando...", rowIdx+2)
 			continue
 		}
 
@@ -89,18 +88,18 @@ func processRows(dataRows [][]string, headerMap map[string]int) (*ProcessingResu
 		displayName := generateDisplayName(elementKey, row, headerMap)
 
 		// Procesar elemento IFS
-		ifsPoint := createIfsPoint(row, headerMap, elementKey, displayName, isBreakerType)
+		ifsPoint := createIfsPoint(row, headerMap, displayName, isBreakerType)
 		result.ElementsIFS = append(result.ElementsIFS, ifsPoint)
 
 		// Procesar elemento IMM
 		if !isTemplateFound {
-			log.Printf("⚠️  Advertencia: Plantilla '%s' no encontrada", elementKey)
+			log.Printf("[WARN] Plantilla '%s' no encontrada", elementKey)
 			continue
 		}
 
 		element, err := createIMMElement(template, displayName, row, headerMap)
 		if err != nil {
-			log.Printf("⚠️  Error procesando elemento '%s': %v", elementKey, err)
+			log.Printf("[WARN] Error procesando elemento '%s': %v", elementKey, err)
 			continue
 		}
 
@@ -127,7 +126,7 @@ func generateDisplayName(elementKey string, row []string, headerMap map[string]i
 }
 
 // createIfsPoint crea un punto IFS basado en los datos de la fila
-func createIfsPoint(row []string, headerMap map[string]int, elementKey, displayName string, isBreakerType bool) *IfsPoint {
+func createIfsPoint(row []string, headerMap map[string]int, displayName string, isBreakerType bool) *IfsPoint {
 	// Determinar partes del nombre IFS
 	var ifsNamePart, ifsPathPart string
 	if isBreakerType {
@@ -279,7 +278,7 @@ func generateXMLFiles(result *ProcessingResult, firstRow []string, headerMap map
 	// Obtener DASIP y mapear a IFS path
 	dasIP := fileio.GetCellValueOrDefault(firstRow, headerMap, "DASIP", "")
 	ifsParentPath := config.GetIfsParentPath(dasIP)
-	log.Printf("📍 DASIP '%s' → %s", dasIP, ifsParentPath)
+	log.Printf("[INFO] DASIP '%s' -> %s", dasIP, ifsParentPath)
 
 	// Generar archivo IFS
 	if err := generateIFSFile(b3, ifsParentPath, result.ElementsIFS); err != nil {
@@ -297,7 +296,7 @@ func generateXMLFiles(result *ProcessingResult, firstRow []string, headerMap map
 // generateIFSFile genera el archivo XML IFS
 func generateIFSFile(b3, parentPath string, elements []any) error {
 	if len(elements) == 0 {
-		log.Printf("ℹ️  No se generará archivo IFS (sin elementos)")
+		log.Printf("[INFO] No se generará archivo IFS (sin elementos)")
 		return nil
 	}
 
@@ -313,12 +312,12 @@ func generateIFSFile(b3, parentPath string, elements []any) error {
 // generateIMMFile genera el archivo XML IMM
 func generateIMMFile(b3, empresa, region, b1, b2 string, result *ProcessingResult) error {
 	if len(result.ElementsIMM) == 0 {
-		log.Printf("ℹ️  No se generará archivo IMM (sin elementos)")
+		log.Printf("[INFO] No se generará archivo IMM (sin elementos)")
 		return nil
 	}
 
 	immParentPath := fmt.Sprintf("ELECTRICITY/NETWORK/%s/%s/%s/%s/%s", empresa, region, b1, b2, b3)
-	
+
 	parents := []Parent{{
 		Path:     immParentPath,
 		Elements: result.ElementsIMM,
@@ -340,7 +339,7 @@ func generateIMMFile(b3, empresa, region, b1, b2 string, result *ProcessingResul
 func createAndSaveXML(fileName string, parents []Parent) error {
 	// Validar que haya contenido
 	if len(parents) == 0 || (len(parents[0].Elements) == 0 && (len(parents) == 1 || len(parents[1].Elements) == 0)) {
-		log.Printf("ℹ️  No se generará '%s' (sin elementos)", fileName)
+		log.Printf("[INFO] No se generará '%s' (sin elementos)", fileName)
 		return nil
 	}
 
@@ -356,11 +355,11 @@ func createAndSaveXML(fileName string, parents []Parent) error {
 	// Escribir XML
 	fullPath := config.GetOutputPath(fileName)
 	writer := fileio.NewXMLWriter(fullPath, config.Global.XML.Indent)
-	
+
 	if err := writer.Write(xdf); err != nil {
 		return fmt.Errorf("error escribiendo XML '%s': %w", fileName, err)
 	}
 
-	log.Printf("✅ Archivo generado: %s", fileName)
+	log.Printf("[OK] Archivo generado: %s", fileName)
 	return nil
 }

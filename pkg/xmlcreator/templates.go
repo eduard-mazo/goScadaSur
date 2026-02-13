@@ -8,10 +8,8 @@ import (
 	"os"
 )
 
-var (
-	// templateDB es la base de datos de plantillas de elementos
-	templateDB map[string]ElementDef
-)
+// templateDB es la base de datos de plantillas de elementos
+var templateDB map[string]ElementDef
 
 // LoadTemplates carga las plantillas de elementos desde un archivo JSON
 func LoadTemplates(filePath string) error {
@@ -30,7 +28,7 @@ func LoadTemplates(filePath string) error {
 	}
 
 	templateDB = db
-	log.Printf("✓ Plantillas cargadas: %d elementos definidos", len(templateDB))
+	log.Printf("[OK] Plantillas cargadas: %d elementos definidos", len(templateDB))
 	return nil
 }
 

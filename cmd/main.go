@@ -84,8 +84,12 @@ y el área de responsabilidad (--aor).`,
 	}
 	stationSearchCmd.Flags().StringVar(&path, "path", "", "Path del sistema (ej: B1/B2/B3)")
 	stationSearchCmd.Flags().StringVar(&aor, "aor", "", "Área de responsabilidad")
-	stationSearchCmd.MarkFlagRequired("path")
-	stationSearchCmd.MarkFlagRequired("aor")
+	if err := stationSearchCmd.MarkFlagRequired("path"); err != nil {
+		log.Fatalf("[ERROR] Error marcando flag 'path' como requerido: %v", err)
+	}
+	if err := stationSearchCmd.MarkFlagRequired("aor"); err != nil {
+		log.Fatalf("[ERROR] Error marcando flag 'aor' como requerido: %v", err)
+	}
 
 	// Comando: csv-xml (ahora soporta CSV y Excel)
 	csvXmlCmd := &cobra.Command{
@@ -103,8 +107,12 @@ El archivo debe contener las columnas requeridas según la configuración.`,
 	}
 	csvXmlCmd.Flags().StringVar(&path, "path", "", "Ruta del archivo CSV/Excel")
 	csvXmlCmd.Flags().StringVar(&aor, "aor", "", "Área de responsabilidad")
-	csvXmlCmd.MarkFlagRequired("path")
-	csvXmlCmd.MarkFlagRequired("aor")
+	if err := csvXmlCmd.MarkFlagRequired("path"); err != nil {
+		log.Fatalf("[ERROR] Error marcando flag 'path' como requerido: %v", err)
+	}
+	if err := csvXmlCmd.MarkFlagRequired("aor"); err != nil {
+		log.Fatalf("[ERROR] Error marcando flag 'aor' como requerido: %v", err)
+	}
 
 	// Comando: direct-query
 	directQueryCmd := &cobra.Command{
@@ -143,29 +151,29 @@ y guarda los resultados en un archivo CSV.`,
 func initializeApp(cmd *cobra.Command, args []string) {
 	// Cargar configuración principal
 	if err := config.Load(configFile); err != nil {
-		log.Fatalf("❌ Error cargando configuración: %v", err)
+		log.Fatalf("[ERROR] Error cargando configuración: %v", err)
 	}
 
-	log.Printf("✓ Configuración cargada desde: %s", configFile)
+	log.Printf("[OK] Configuración cargada desde: %s", configFile)
 
 	// Cargar configuración DASIP
 	dasipConfigPath := config.GetDasipConfigPath()
 	if err := config.LoadDasipConfig(dasipConfigPath); err != nil {
-		log.Printf("⚠️  Advertencia: Error cargando configuración DASIP: %v", err)
-		log.Printf("   Usando configuración por defecto")
+		log.Printf("[WARN] Error cargando configuración DASIP: %v", err)
+		log.Printf("       Usando configuración por defecto")
 	} else {
-		log.Printf("✓ Configuración DASIP cargada: %d mapeos", len(config.Dasip.DasipMapping))
+		log.Printf("[OK] Configuración DASIP cargada: %d mapeos", len(config.Dasip.DasipMapping))
 	}
 
 	// Cargar plantillas XML
 	templatesPath := config.GetTemplatesPath()
 	if err := xmlcreator.LoadTemplates(templatesPath); err != nil {
-		log.Printf("⚠️  Advertencia: Error cargando plantillas: %v", err)
+		log.Printf("[WARN] Error cargando plantillas: %v", err)
 	}
 
 	// Asegurar que el directorio de salida exista
 	if err := config.EnsureOutputDir(); err != nil {
-		log.Printf("⚠️  Advertencia: Error creando directorio de salida: %v", err)
+		log.Printf("[WARN] Error creando directorio de salida: %v", err)
 	}
 }
 
@@ -184,7 +192,7 @@ func runDirectQuery(cmd *cobra.Command, args []string) {
 func runCSVToXML(cmd *cobra.Command, args []string) {
 	// Verificar que el archivo exista
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		log.Fatalf("❌ Error: El archivo '%s' no existe", path)
+		log.Fatalf("[ERROR] El archivo '%s' no existe", path)
 	}
 
 	// Verificar formato soportado
@@ -192,25 +200,25 @@ func runCSVToXML(cmd *cobra.Command, args []string) {
 	ext = strings.TrimPrefix(ext, ".")
 
 	if !config.IsFormatSupported(ext) {
-		log.Fatalf("❌ Error: Formato '%s' no soportado. Formatos válidos: %v",
+		log.Fatalf("[ERROR] Formato '%s' no soportado. Formatos válidos: %v",
 			ext, config.Global.Files.SupportedInputFormats)
 	}
 
-	log.Printf("🚀 Procesando archivo: %s (formato: %s)", path, strings.ToUpper(ext))
+	log.Printf("[INFO] Procesando archivo: %s (formato: %s)", path, strings.ToUpper(ext))
 
 	// Crear XMLs
 	if err := xmlcreator.CreateXMLFromFile(path); err != nil {
-		log.Fatalf("❌ Error generando XML: %v", err)
+		log.Fatalf("[ERROR] Error generando XML: %v", err)
 	}
 
-	log.Println("✅ Proceso completado exitosamente")
+	log.Println("[OK] Proceso completado exitosamente")
 }
 
 // executeCommand ejecuta un comando hacia la base de datos C#
 func executeCommand(mode, query, path, aor string) {
 	empresa, region, b1, b2, b3, err := parsePath(path)
 	if err != nil && mode != "direct_query" {
-		log.Printf("⚠️  Error parseando path: %v", err)
+		log.Printf("[WARN] Error parseando path: %v", err)
 	}
 
 	// Solicitar credenciales si no están disponibles
@@ -226,7 +234,7 @@ func executeCommand(mode, query, path, aor string) {
 		fmt.Print("Contraseña: ")
 		bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
-			log.Fatalf("❌ Error leyendo contraseña: %v", err)
+			log.Fatalf("[ERROR] Error leyendo contraseña: %v", err)
 		}
 		fmt.Println()
 		password = string(bytePassword)
@@ -256,7 +264,7 @@ func executeCommand(mode, query, path, aor string) {
 	stdinPipe, _ := cmd.StdinPipe()
 
 	if err := cmd.Start(); err != nil {
-		log.Fatalf("❌ Error iniciando proceso: %v", err)
+		log.Fatalf("[ERROR] Error iniciando proceso: %v", err)
 	}
 
 	// Enviar entrada
@@ -272,33 +280,37 @@ func executeCommand(mode, query, path, aor string) {
 
 	go func() {
 		defer wg.Done()
-		io.Copy(&outBuf, stdoutPipe)
+		if _, err := io.Copy(&outBuf, stdoutPipe); err != nil {
+			log.Printf("[ERROR] Error leyendo stdout: %v", err)
+		}
 	}()
 
 	go func() {
 		defer wg.Done()
-		io.Copy(&errBuf, stderrPipe)
+		if _, err := io.Copy(&errBuf, stderrPipe); err != nil {
+			log.Printf("[ERROR] Error leyendo stderr: %v", err)
+		}
 	}()
 
 	wg.Wait()
 
 	if err := cmd.Wait(); err != nil {
-		log.Printf("❌ Error en proceso: %v", err)
+		log.Printf("[ERROR] Error en proceso: %v", err)
 		if errBuf.Len() > 0 {
-			log.Printf("STDERR: %s", errBuf.String())
+			log.Printf("[STDERR] %s", errBuf.String())
 		}
 		return
 	}
 
 	if errBuf.Len() > 0 {
-		fmt.Printf("⚠️  STDERR:\n%s\n", errBuf.String())
+		fmt.Printf("[WARN] STDERR:\n%s\n", errBuf.String())
 	}
 
 	// Procesar salida
 	output := outBuf.Bytes()
 	if !gjson.ValidBytes(output) {
-		log.Println("⚠️  La salida no es JSON válido")
-		fmt.Printf("Salida:\n%s\n", outBuf.String())
+		log.Println("[WARN] La salida no es JSON válido")
+		fmt.Printf("[OUTPUT]\n%s\n", outBuf.String())
 		return
 	}
 
@@ -307,7 +319,7 @@ func executeCommand(mode, query, path, aor string) {
 	receivedChecksum := gjson.GetBytes(output, "checksum").String()
 
 	if payloadJSON == "" || receivedChecksum == "" {
-		log.Fatal("❌ Respuesta JSON inválida (falta payload o checksum)")
+		log.Fatal("[ERROR] Respuesta JSON inválida (falta payload o checksum)")
 	}
 
 	hasher := sha256.New()
@@ -315,10 +327,10 @@ func executeCommand(mode, query, path, aor string) {
 	calculatedChecksum := hex.EncodeToString(hasher.Sum(nil))
 
 	if calculatedChecksum != receivedChecksum {
-		log.Fatal("❌ ERROR DE INTEGRIDAD! Los datos pueden estar corruptos")
+		log.Fatal("[ERROR] ERROR DE INTEGRIDAD! Los datos pueden estar corruptos")
 	}
 
-	log.Println("✓ Verificación de integridad exitosa")
+	log.Println("[OK] Verificación de integridad exitosa")
 
 	// Procesar según el modo
 	switch mode {
@@ -328,9 +340,9 @@ func executeCommand(mode, query, path, aor string) {
 		filename = config.GetOutputPath(filename)
 
 		if err := saveDirectQueryToCSV(payloadJSON, filename); err != nil {
-			log.Fatalf("❌ Error guardando query: %v", err)
+			log.Fatalf("[ERROR] Error guardando query: %v", err)
 		}
-		log.Printf("✅ Resultados guardados en: %s", filename)
+		log.Printf("[OK] Resultados guardados en: %s", filename)
 
 	case "station_search":
 		timestamp := time.Now().Format(config.Global.Output.TimestampFormat)
@@ -338,14 +350,14 @@ func executeCommand(mode, query, path, aor string) {
 		filename = config.GetOutputPath(filename)
 
 		if err := saveStationSearchToCSV(payloadJSON, filename, empresa, region, aor); err != nil {
-			log.Fatalf("❌ Error guardando búsqueda: %v", err)
+			log.Fatalf("[ERROR] Error guardando búsqueda: %v", err)
 		}
-		log.Printf("✅ Datos guardados en: %s", filename)
+		log.Printf("[OK] Datos guardados en: %s", filename)
 
 		// Generar XMLs automáticamente
-		log.Println("🔄 Generando archivos XML...")
+		log.Println("[INFO] Generando archivos XML...")
 		if err := xmlcreator.CreateXMLFromFile(filename); err != nil {
-			log.Fatalf("❌ Error generando XML: %v", err)
+			log.Fatalf("[ERROR] Error generando XML: %v", err)
 		}
 	}
 }
@@ -377,7 +389,9 @@ func saveDirectQueryToCSV(payloadJSON, filePath string) error {
 			value := row.Get(header)
 			record = append(record, value.String())
 		}
-		writer.WriteRow(record)
+		if err := writer.WriteRow(record); err != nil {
+			log.Printf("[ERROR] Error escribiendo fila: %v", err)
+		}
 		return true
 	})
 
@@ -413,7 +427,9 @@ func saveStationSearchToCSV(payloadJSON, filePath, empresa, region, aor string) 
 			value := row.Get(header)
 			record = append(record, value.String())
 		}
-		writer.WriteRow(record)
+		if err := writer.WriteRow(record); err != nil {
+			log.Printf("[ERROR] Error escribiendo fila: %v", err)
+		}
 		return true
 	})
 
