@@ -1,45 +1,27 @@
-// main.go
+// cmd/main.go
 package main
 
 import (
 	"bufio"
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"goScadaSur/pkg/api"
 	"goScadaSur/pkg/config"
-	"goScadaSur/pkg/fileio"
+	"goScadaSur/pkg/database"
+	"goScadaSur/pkg/utils"
 	"goScadaSur/pkg/xmlcreator"
-	"io"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/tidwall/gjson"
 	"golang.org/x/term"
 )
 
 const (
 	defaultConfigPath = "configs/config.yaml"
 )
-
-// CSharpInput define la estructura para enviar datos a la aplicación C#
-type CSharpInput struct {
-	Mode     string `json:"mode"`
-	User     string `json:"user"`
-	Password string `json:"password"`
-	Host     string `json:"host"`
-	Query    string `json:"query"`
-	B1       string `json:"b1"`
-	B2       string `json:"b2"`
-	B3       string `json:"b3"`
-}
 
 var (
 	// Flags globales
@@ -49,6 +31,13 @@ var (
 	host       string
 	path       string
 	aor        string
+	port       int
+
+	// Configuración y estado global de la ejecución
+	appCfg   *config.AppConfig
+	dasipCfg *config.DasipConfig
+	tm       *xmlcreator.TemplateManager
+	dbClient *database.DatabaseClient
 )
 
 func main() {
@@ -66,7 +55,7 @@ desde archivos CSV o Excel.`,
 		PersistentPreRun: initializeApp,
 	}
 
-	// Flags persistentes (disponibles en todos los comandos)
+	// Flags persistentes
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", defaultConfigPath, "Archivo de configuración")
 	rootCmd.PersistentFlags().StringVarP(&host, "host", "i", "", "Dirección IP del host")
 	rootCmd.PersistentFlags().StringVarP(&user, "user", "u", "", "Usuario de la base de datos")
@@ -76,384 +65,194 @@ desde archivos CSV o Excel.`,
 	stationSearchCmd := &cobra.Command{
 		Use:   "station-search",
 		Short: "Busca una estación por nombre y retorna sus señales",
-		Long: `Busca una estación en la base de datos SURVALENT y retorna
-todas las señales asociadas. Requiere especificar el path (--path)
-y el área de responsabilidad (--aor).`,
-		Args: cobra.NoArgs,
-		Run:  runStationSearch,
+		Args:  cobra.NoArgs,
+		Run:   runStationSearch,
 	}
 	stationSearchCmd.Flags().StringVar(&path, "path", "", "Path del sistema (ej: B1/B2/B3)")
 	stationSearchCmd.Flags().StringVar(&aor, "aor", "", "Área de responsabilidad")
-	if err := stationSearchCmd.MarkFlagRequired("path"); err != nil {
-		log.Fatalf("[ERROR] Error marcando flag 'path' como requerido: %v", err)
-	}
-	if err := stationSearchCmd.MarkFlagRequired("aor"); err != nil {
-		log.Fatalf("[ERROR] Error marcando flag 'aor' como requerido: %v", err)
-	}
 
-	// Comando: csv-xml (ahora soporta CSV y Excel)
+	// Comando: csv-xml
 	csvXmlCmd := &cobra.Command{
 		Use:   "csv-xml",
 		Short: "Genera archivos XML desde CSV o Excel",
-		Long: `Genera archivos XML IFS e IMM a partir de archivos CSV o Excel.
-		
-Formatos soportados:
-  - CSV (.csv)
-  - Excel (.xlsx, .xls)
-  
-El archivo debe contener las columnas requeridas según la configuración.`,
-		Args: cobra.NoArgs,
-		Run:  runCSVToXML,
+		Args:  cobra.NoArgs,
+		Run:   runCSVToXML,
 	}
 	csvXmlCmd.Flags().StringVar(&path, "path", "", "Ruta del archivo CSV/Excel")
 	csvXmlCmd.Flags().StringVar(&aor, "aor", "", "Área de responsabilidad")
-	if err := csvXmlCmd.MarkFlagRequired("path"); err != nil {
-		log.Fatalf("[ERROR] Error marcando flag 'path' como requerido: %v", err)
-	}
-	if err := csvXmlCmd.MarkFlagRequired("aor"); err != nil {
-		log.Fatalf("[ERROR] Error marcando flag 'aor' como requerido: %v", err)
-	}
 
 	// Comando: direct-query
 	directQueryCmd := &cobra.Command{
 		Use:   "direct-query [SQL query]",
-		Short: "Ejecuta una query SQL directamente en la base de datos",
-		Long: `Ejecuta una consulta SQL directa en la base de datos SURVALENT
-y guarda los resultados en un archivo CSV.`,
-		Args: cobra.ExactArgs(1),
-		Run:  runDirectQuery,
+		Short: "Ejecuta una query SQL directamente",
+		Args:  cobra.ExactArgs(1),
+		Run:   runDirectQuery,
 	}
+
+	// Comando: serve (NUEVO)
+	serveCmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Inicia el servidor web para la interfaz de usuario",
+		Args:  cobra.NoArgs,
+		Run:   runServe,
+	}
+	serveCmd.Flags().IntVarP(&port, "port", "P", 8080, "Puerto para el servidor web")
 
 	// Comando: version
 	versionCmd := &cobra.Command{
 		Use:   "version",
 		Short: "Muestra la versión de la aplicación",
 		Run: func(cmd *cobra.Command, args []string) {
-			if config.Global != nil {
-				fmt.Printf("%s v%s\n", config.Global.App.Name, config.Global.App.Version)
-				fmt.Printf("%s\n", config.Global.App.Description)
+			if appCfg != nil {
+				fmt.Printf("%s v%s\n", appCfg.App.Name, appCfg.App.Version)
 			} else {
-				fmt.Println("goScadaSur - versión no disponible (configuración no cargada)")
+				fmt.Println("goScadaSur - versión no disponible")
 			}
 		},
 	}
 
-	// Agregar comandos
-	rootCmd.AddCommand(stationSearchCmd, directQueryCmd, csvXmlCmd, versionCmd)
+	rootCmd.AddCommand(stationSearchCmd, directQueryCmd, csvXmlCmd, serveCmd, versionCmd)
 
-	// Ejecutar
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatalf("❌ Error: %v", err)
 	}
 }
 
-// initializeApp inicializa la configuración de la aplicación
 func initializeApp(cmd *cobra.Command, args []string) {
-	// Cargar configuración principal
-	if err := config.Load(configFile); err != nil {
+	var err error
+	appCfg, err = config.Load(configFile)
+	if err != nil {
 		log.Fatalf("[ERROR] Error cargando configuración: %v", err)
 	}
 
-	log.Printf("[OK] Configuración cargada desde: %s", configFile)
-
-	// Cargar configuración DASIP
-	dasipConfigPath := config.GetDasipConfigPath()
-	if err := config.LoadDasipConfig(dasipConfigPath); err != nil {
-		log.Printf("[WARN] Error cargando configuración DASIP: %v", err)
-		log.Printf("       Usando configuración por defecto")
-	} else {
-		log.Printf("[OK] Configuración DASIP cargada: %d mapeos", len(config.Dasip.DasipMapping))
+	dasipConfigPath := appCfg.GetDasipConfigPath()
+	dasipCfg, err = config.LoadDasipConfig(dasipConfigPath)
+	if err != nil {
+		dasipCfg = &config.DasipConfig{DefaultPath: "SCADA/RTU", DasipMapping: make(map[string]string)}
 	}
 
-	// Cargar plantillas XML
-	templatesPath := config.GetTemplatesPath()
-	if err := xmlcreator.LoadTemplates(templatesPath); err != nil {
+	templatesPath := appCfg.GetTemplatesPath()
+	tm, err = xmlcreator.LoadTemplates(templatesPath)
+	if err != nil {
 		log.Printf("[WARN] Error cargando plantillas: %v", err)
 	}
 
-	// Asegurar que el directorio de salida exista
-	if err := config.EnsureOutputDir(); err != nil {
+	dbClient = database.NewDatabaseClient(appCfg)
+
+	if err := appCfg.EnsureOutputDir(); err != nil {
 		log.Printf("[WARN] Error creando directorio de salida: %v", err)
 	}
 }
 
-// runStationSearch ejecuta la búsqueda de estación
-func runStationSearch(cmd *cobra.Command, args []string) {
-	executeCommand("station_search", "", path, aor)
+func runServe(cmd *cobra.Command, args []string) {
+	server := api.NewServer(appCfg, dasipCfg, tm, configFile)
+
+	// Abrir navegador automáticamente
+	go func() {
+		time.Sleep(500 * time.Millisecond) // Pequeña espera para asegurar que el server esté escuchando
+		url := fmt.Sprintf("http://localhost:%d", port)
+		log.Printf("[INFO] Abriendo navegador en %s...", url)
+		if err := utils.OpenBrowser(url); err != nil {
+			log.Printf("[WARN] No se pudo abrir el navegador: %v", err)
+		}
+	}()
+
+	if err := server.Start(port); err != nil {
+		log.Fatalf("[ERROR] Error iniciando servidor: %v", err)
+	}
 }
 
-// runDirectQuery ejecuta una query directa
+func runStationSearch(cmd *cobra.Command, args []string) {
+	empresa, region, b1, b2, b3, err := database.ParsePath(path)
+	if err != nil {
+		log.Fatalf("[ERROR] %v", err)
+	}
+
+	if host == "" { host = readInput("Host: ") }
+	if user == "" { user = readInput("Usuario: ") }
+	if password == "" { password = readPassword() }
+
+	input := database.CSharpInput{
+		Mode: "station_search", User: user, Password: password, Host: host,
+		B1: b1, B2: b2, B3: b3,
+	}
+
+	result, err := dbClient.ExecuteCommand(input)
+	if err != nil {
+		log.Fatalf("[ERROR] %v", err)
+	}
+
+	timestamp := time.Now().Format(appCfg.Output.TimestampFormat)
+	filename := fmt.Sprintf("%s_%s%s", timestamp, b3, appCfg.Output.Suffixes["csv"])
+	filename = appCfg.GetOutputPath(filename)
+
+	if err := database.SaveStationSearchToCSV(result.PayloadJSON, filename, empresa, region, aor); err != nil {
+		log.Fatalf("[ERROR] %v", err)
+	}
+	log.Printf("[OK] Datos guardados en: %s", filename)
+
+	if err := xmlcreator.CreateXMLFromFile(filename, appCfg, dasipCfg, tm); err != nil {
+		log.Fatalf("[ERROR] %v", err)
+	}
+}
+
 func runDirectQuery(cmd *cobra.Command, args []string) {
 	query := args[0]
-	executeCommand("direct_query", query, "", "")
+	if host == "" { host = readInput("Host: ") }
+	if user == "" { user = readInput("Usuario: ") }
+	if password == "" { password = readPassword() }
+
+	input := database.CSharpInput{
+		Mode: "direct_query", User: user, Password: password, Host: host,
+		Query: query,
+	}
+
+	result, err := dbClient.ExecuteCommand(input)
+	if err != nil {
+		log.Fatalf("[ERROR] %v", err)
+	}
+
+	timestamp := time.Now().Format(appCfg.Output.TimestampFormat)
+	filename := fmt.Sprintf("%s_direct_query%s", timestamp, appCfg.Output.Suffixes["csv"])
+	filename = appCfg.GetOutputPath(filename)
+
+	if err := database.SaveDirectQueryToCSV(result.PayloadJSON, filename); err != nil {
+		log.Fatalf("[ERROR] %v", err)
+	}
+	log.Printf("[OK] Resultados guardados en: %s", filename)
 }
 
-// runCSVToXML ejecuta la conversión de CSV/Excel a XML
 func runCSVToXML(cmd *cobra.Command, args []string) {
-	// Verificar que el archivo exista
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		log.Fatalf("[ERROR] El archivo '%s' no existe", path)
 	}
 
-	// Verificar formato soportado
 	ext := strings.ToLower(filepath.Ext(path))
 	ext = strings.TrimPrefix(ext, ".")
 
-	if !config.IsFormatSupported(ext) {
-		log.Fatalf("[ERROR] Formato '%s' no soportado. Formatos válidos: %v",
-			ext, config.Global.Files.SupportedInputFormats)
+	if !appCfg.IsFormatSupported(ext) {
+		log.Fatalf("[ERROR] Formato '%s' no soportado.", ext)
 	}
 
-	log.Printf("[INFO] Procesando archivo: %s (formato: %s)", path, strings.ToUpper(ext))
-
-	// Crear XMLs
-	if err := xmlcreator.CreateXMLFromFile(path); err != nil {
-		log.Fatalf("[ERROR] Error generando XML: %v", err)
+	if err := xmlcreator.CreateXMLFromFile(path, appCfg, dasipCfg, tm); err != nil {
+		log.Fatalf("[ERROR] %v", err)
 	}
-
-	log.Println("[OK] Proceso completado exitosamente")
+	log.Println("[OK] Proceso completado")
 }
 
-// executeCommand ejecuta un comando hacia la base de datos C#
-func executeCommand(mode, query, path, aor string) {
-	empresa, region, b1, b2, b3, err := parsePath(path)
-	if err != nil && mode != "direct_query" {
-		log.Printf("[WARN] Error parseando path: %v", err)
-	}
-
-	// Solicitar credenciales si no están disponibles
-	if host == "" {
-		host = readInput("Host: ")
-	}
-
-	if user == "" {
-		user = readInput("Usuario: ")
-	}
-
-	if password == "" {
-		fmt.Print("Contraseña: ")
-		bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
-		if err != nil {
-			log.Fatalf("[ERROR] Error leyendo contraseña: %v", err)
-		}
-		fmt.Println()
-		password = string(bytePassword)
-	}
-
-	// Preparar datos de entrada
-	inputData := CSharpInput{
-		Mode:     mode,
-		User:     user,
-		Password: password,
-		Host:     host,
-		Query:    query,
-		B1:       b1,
-		B2:       b2,
-		B3:       b3,
-	}
-
-	inputBytes, _ := json.Marshal(inputData)
-	inputJSON := string(inputBytes)
-
-	// Ejecutar proceso C#
-	csharpExe := config.Global.Database.CSharpExecutable
-	cmd := exec.Command(csharpExe)
-
-	stdoutPipe, _ := cmd.StdoutPipe()
-	stderrPipe, _ := cmd.StderrPipe()
-	stdinPipe, _ := cmd.StdinPipe()
-
-	if err := cmd.Start(); err != nil {
-		log.Fatalf("[ERROR] Error iniciando proceso: %v", err)
-	}
-
-	// Enviar entrada
-	go func() {
-		defer stdinPipe.Close()
-		fmt.Fprintln(stdinPipe, inputJSON)
-	}()
-
-	// Leer salida
-	var wg sync.WaitGroup
-	var outBuf, errBuf bytes.Buffer
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		if _, err := io.Copy(&outBuf, stdoutPipe); err != nil {
-			log.Printf("[ERROR] Error leyendo stdout: %v", err)
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		if _, err := io.Copy(&errBuf, stderrPipe); err != nil {
-			log.Printf("[ERROR] Error leyendo stderr: %v", err)
-		}
-	}()
-
-	wg.Wait()
-
-	if err := cmd.Wait(); err != nil {
-		log.Printf("[ERROR] Error en proceso: %v", err)
-		if errBuf.Len() > 0 {
-			log.Printf("[STDERR] %s", errBuf.String())
-		}
-		return
-	}
-
-	if errBuf.Len() > 0 {
-		fmt.Printf("[WARN] STDERR:\n%s\n", errBuf.String())
-	}
-
-	// Procesar salida
-	output := outBuf.Bytes()
-	if !gjson.ValidBytes(output) {
-		log.Println("[WARN] La salida no es JSON válido")
-		fmt.Printf("[OUTPUT]\n%s\n", outBuf.String())
-		return
-	}
-
-	// Verificar integridad
-	payloadJSON := gjson.GetBytes(output, "payload").Raw
-	receivedChecksum := gjson.GetBytes(output, "checksum").String()
-
-	if payloadJSON == "" || receivedChecksum == "" {
-		log.Fatal("[ERROR] Respuesta JSON inválida (falta payload o checksum)")
-	}
-
-	hasher := sha256.New()
-	hasher.Write([]byte(payloadJSON))
-	calculatedChecksum := hex.EncodeToString(hasher.Sum(nil))
-
-	if calculatedChecksum != receivedChecksum {
-		log.Fatal("[ERROR] ERROR DE INTEGRIDAD! Los datos pueden estar corruptos")
-	}
-
-	log.Println("[OK] Verificación de integridad exitosa")
-
-	// Procesar según el modo
-	switch mode {
-	case "direct_query":
-		timestamp := time.Now().Format(config.Global.Output.TimestampFormat)
-		filename := fmt.Sprintf("%s_direct_query%s", timestamp, config.Global.Output.Suffixes["csv"])
-		filename = config.GetOutputPath(filename)
-
-		if err := saveDirectQueryToCSV(payloadJSON, filename); err != nil {
-			log.Fatalf("[ERROR] Error guardando query: %v", err)
-		}
-		log.Printf("[OK] Resultados guardados en: %s", filename)
-
-	case "station_search":
-		timestamp := time.Now().Format(config.Global.Output.TimestampFormat)
-		filename := fmt.Sprintf("%s_%s%s", timestamp, b3, config.Global.Output.Suffixes["csv"])
-		filename = config.GetOutputPath(filename)
-
-		if err := saveStationSearchToCSV(payloadJSON, filename, empresa, region, aor); err != nil {
-			log.Fatalf("[ERROR] Error guardando búsqueda: %v", err)
-		}
-		log.Printf("[OK] Datos guardados en: %s", filename)
-
-		// Generar XMLs automáticamente
-		log.Println("[INFO] Generando archivos XML...")
-		if err := xmlcreator.CreateXMLFromFile(filename); err != nil {
-			log.Fatalf("[ERROR] Error generando XML: %v", err)
-		}
-	}
-}
-
-// saveDirectQueryToCSV guarda los resultados de una query directa
-func saveDirectQueryToCSV(payloadJSON, filePath string) error {
-	writer, err := fileio.NewCSVWriter(filePath)
-	if err != nil {
-		return err
-	}
-	defer writer.Close()
-
-	// Obtener columnas
-	columnsResult := gjson.Get(payloadJSON, "columns.#.name")
-	var headers []string
-	for _, name := range columnsResult.Array() {
-		headers = append(headers, name.String())
-	}
-
-	if err := writer.WriteRow(headers); err != nil {
-		return err
-	}
-
-	// Escribir datos
-	dataResult := gjson.Get(payloadJSON, "data")
-	dataResult.ForEach(func(key, row gjson.Result) bool {
-		var record []string
-		for _, header := range headers {
-			value := row.Get(header)
-			record = append(record, value.String())
-		}
-		if err := writer.WriteRow(record); err != nil {
-			log.Printf("[ERROR] Error escribiendo fila: %v", err)
-		}
-		return true
-	})
-
-	return nil
-}
-
-// saveStationSearchToCSV guarda los resultados de búsqueda de estación
-func saveStationSearchToCSV(payloadJSON, filePath, empresa, region, aor string) error {
-	writer, err := fileio.NewCSVWriter(filePath)
-	if err != nil {
-		return err
-	}
-	defer writer.Close()
-
-	// Obtener columnas dinámicas
-	columnsResult := gjson.Get(payloadJSON, "columns.#.name")
-	var dynamicHeaders []string
-	for _, name := range columnsResult.Array() {
-		dynamicHeaders = append(dynamicHeaders, name.String())
-	}
-
-	// Cabeceras completas
-	headers := append([]string{"EMPRESA", "REGION", "AOR"}, dynamicHeaders...)
-	if err := writer.WriteRow(headers); err != nil {
-		return err
-	}
-
-	// Escribir datos
-	dataResult := gjson.Get(payloadJSON, "data")
-	dataResult.ForEach(func(key, row gjson.Result) bool {
-		record := []string{empresa, region, aor}
-		for _, header := range dynamicHeaders {
-			value := row.Get(header)
-			record = append(record, value.String())
-		}
-		if err := writer.WriteRow(record); err != nil {
-			log.Printf("[ERROR] Error escribiendo fila: %v", err)
-		}
-		return true
-	})
-
-	return nil
-}
-
-// parsePath parsea un path en sus componentes
-func parsePath(path string) (empresa, region, b1, b2, b3 string, err error) {
-	if path == "" {
-		return "", "", "", "", "", fmt.Errorf("path vacío")
-	}
-
-	parts := strings.Split(path, "/")
-	if len(parts) != 5 {
-		return "", "", "", "", "", fmt.Errorf("path inválido (esperados 5 partes, encontrados %d)", len(parts))
-	}
-
-	return parts[0], parts[1], parts[2], parts[3], parts[4], nil
-}
-
-// readInput lee input del usuario
 func readInput(prompt string) string {
 	fmt.Print(prompt)
 	reader := bufio.NewReader(os.Stdin)
 	input, _ := reader.ReadString('\n')
 	return strings.TrimSpace(input)
+}
+
+func readPassword() string {
+	fmt.Print("Contraseña: ")
+	bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
+	if err != nil {
+		log.Fatalf("[ERROR] %v", err)
+	}
+	fmt.Println()
+	return string(bytePassword)
 }

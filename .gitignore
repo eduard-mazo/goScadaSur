@@ -22,8 +22,6 @@ build/
 *.swo
 *.DS_Store
 
-*.md
-
 # Archivos de dependencias (Go modules se encargan de esto)
 vendor/
 output/

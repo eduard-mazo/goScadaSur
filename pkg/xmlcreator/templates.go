@@ -4,69 +4,95 @@ package xmlcreator
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 )
 
-// templateDB es la base de datos de plantillas de elementos
-var templateDB map[string]ElementDef
+// TemplateManager gestiona las plantillas de elementos
+type TemplateManager struct {
+	templates map[string]ElementDef
+	filePath  string
+}
 
 // LoadTemplates carga las plantillas de elementos desde un archivo JSON
-func LoadTemplates(filePath string) error {
+func LoadTemplates(filePath string) (*TemplateManager, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return fmt.Errorf("error leyendo archivo de plantillas '%s': %w", filePath, err)
+		return nil, fmt.Errorf("error leyendo archivo de plantillas '%s': %w", filePath, err)
 	}
 
 	var db map[string]ElementDef
 	if err := json.Unmarshal(data, &db); err != nil {
-		return fmt.Errorf("error parseando plantillas JSON: %w", err)
+		return nil, fmt.Errorf("error parseando plantillas JSON: %w", err)
 	}
 
 	if len(db) == 0 {
-		return fmt.Errorf("el archivo de plantillas está vacío")
+		return nil, fmt.Errorf("el archivo de plantillas está vacío")
 	}
 
-	templateDB = db
-	log.Printf("[OK] Plantillas cargadas: %d elementos definidos", len(templateDB))
+	return &TemplateManager{
+		templates: db,
+		filePath:  filePath,
+	}, nil
+}
+
+// GetRawJSON retorna el contenido JSON crudo de las plantillas
+func (tm *TemplateManager) GetRawJSON() (string, error) {
+	if tm == nil || tm.templates == nil {
+		return "{}", nil
+	}
+	data, err := json.MarshalIndent(tm.templates, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// SaveRawJSON actualiza las plantillas desde un string JSON y guarda el archivo
+func (tm *TemplateManager) SaveRawJSON(rawJSON string) error {
+	var db map[string]ElementDef
+	if err := json.Unmarshal([]byte(rawJSON), &db); err != nil {
+		return fmt.Errorf("error parseando JSON de plantillas: %w", err)
+	}
+
+	// Validar que no esté vacío
+	if len(db) == 0 {
+		return fmt.Errorf("las plantillas no pueden estar vacías")
+	}
+
+	// Guardar en disco
+	if err := os.WriteFile(tm.filePath, []byte(rawJSON), 0644); err != nil {
+		return fmt.Errorf("error escribiendo archivo de plantillas: %w", err)
+	}
+
+	// Actualizar en memoria
+	tm.templates = db
 	return nil
 }
 
 // GetTemplate obtiene una plantilla por su clave
-func GetTemplate(key string) (ElementDef, bool) {
-	if templateDB == nil {
+func (tm *TemplateManager) GetTemplate(key string) (ElementDef, bool) {
+	if tm == nil || tm.templates == nil {
 		return ElementDef{}, false
 	}
-	template, exists := templateDB[key]
+	template, exists := tm.templates[key]
 	return template, exists
 }
 
-// DeepCopyElement crea una copia profunda de un ElementDef
-func DeepCopyElement(element ElementDef) (ElementDef, error) {
-	// Usar JSON para hacer una copia profunda
-	data, err := json.Marshal(element)
-	if err != nil {
-		return ElementDef{}, fmt.Errorf("error serializando elemento: %w", err)
-	}
-
-	var copy ElementDef
-	if err := json.Unmarshal(data, &copy); err != nil {
-		return ElementDef{}, fmt.Errorf("error deserializando elemento: %w", err)
-	}
-
-	return copy, nil
+// DeepCopyElement crea una copia profunda de un ElementDef usando el método Clone
+func (tm *TemplateManager) DeepCopyElement(element ElementDef) (ElementDef, error) {
+	return element.Clone(), nil
 }
 
 // GetTemplateStats retorna estadísticas sobre las plantillas cargadas
-func GetTemplateStats() map[string]int {
+func (tm *TemplateManager) GetTemplateStats() map[string]int {
 	stats := map[string]int{
-		"total":    len(templateDB),
+		"total":    len(tm.templates),
 		"analog":   0,
 		"discrete": 0,
 		"breaker":  0,
 	}
 
-	for _, template := range templateDB {
+	for _, template := range tm.templates {
 		if template.Analog != nil {
 			stats["analog"]++
 		}
@@ -82,10 +108,10 @@ func GetTemplateStats() map[string]int {
 }
 
 // ValidateTemplates valida que las plantillas tengan la estructura correcta
-func ValidateTemplates() []string {
+func (tm *TemplateManager) ValidateTemplates() []string {
 	var warnings []string
 
-	for key, template := range templateDB {
+	for key, template := range tm.templates {
 		// Verificar que al menos un tipo esté definido
 		hasType := template.Analog != nil || template.Discrete != nil || template.Breaker != nil
 

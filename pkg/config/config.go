@@ -12,109 +12,104 @@ import (
 
 // AppConfig representa la configuración completa de la aplicación
 type AppConfig struct {
-	App        AppInfo           `yaml:"app"`
-	Files      FilesConfig       `yaml:"files"`
-	XML        XMLConfig         `yaml:"xml"`
-	Logging    LoggingConfig     `yaml:"logging"`
-	Database   DatabaseConfig    `yaml:"database"`
-	Output     OutputConfig      `yaml:"output"`
-	Validation ValidationConfig  `yaml:"validation"`
-	Processing ProcessingConfig  `yaml:"processing"`
+	App        AppInfo           `yaml:"app" json:"app"`
+	Files      FilesConfig       `yaml:"files" json:"files"`
+	XML        XMLConfig         `yaml:"xml" json:"xml"`
+	Logging    LoggingConfig     `yaml:"logging" json:"logging"`
+	Database   DatabaseConfig    `yaml:"database" json:"database"`
+	Output     OutputConfig      `yaml:"output" json:"output"`
+	Validation ValidationConfig  `yaml:"validation" json:"validation"`
+	Processing ProcessingConfig  `yaml:"processing" json:"processing"`
 }
 
 type AppInfo struct {
-	Name        string `yaml:"name"`
-	Version     string `yaml:"version"`
-	Description string `yaml:"description"`
+	Name        string `yaml:"name" json:"name"`
+	Version     string `yaml:"version" json:"version"`
+	Description string `yaml:"description" json:"description"`
 }
 
 type FilesConfig struct {
-	Templates              string   `yaml:"templates"`
-	DasipMapping           string   `yaml:"dasip_mapping"`
-	OutputDir              string   `yaml:"output_dir"`
-	SupportedInputFormats  []string `yaml:"supported_input_formats"`
+	Templates              string   `yaml:"templates" json:"templates"`
+	DasipMapping           string   `yaml:"dasip_mapping" json:"dasip_mapping"`
+	OutputDir              string   `yaml:"output_dir" json:"output_dir"`
+	SupportedInputFormats  []string `yaml:"supported_input_formats" json:"supported_input_formats"`
 }
 
 type XMLConfig struct {
-	Lang    string `yaml:"lang"`
-	Version string `yaml:"version"`
-	Indent  string `yaml:"indent"`
+	Lang    string `yaml:"lang" json:"lang"`
+	Version string `yaml:"version" json:"version"`
+	Indent  string `yaml:"indent" json:"indent"`
 }
 
 type LoggingConfig struct {
-	Level           string `yaml:"level"`
-	TimestampFormat string `yaml:"timestamp_format"`
+	Level           string `yaml:"level" json:"level"`
+	TimestampFormat string `yaml:"timestamp_format" json:"timestamp_format"`
 }
 
 type DatabaseConfig struct {
-	ConnectionTimeout int    `yaml:"connection_timeout"`
-	CSharpExecutable  string `yaml:"csharp_executable"`
+	ConnectionTimeout int    `yaml:"connection_timeout" json:"connection_timeout"`
+	CSharpExecutable  string `yaml:"csharp_executable" json:"csharp_executable"`
 }
 
 type OutputConfig struct {
-	TimestampFormat string            `yaml:"timestamp_format"`
-	Suffixes        map[string]string `yaml:"suffixes"`
+	TimestampFormat string            `yaml:"timestamp_format" json:"timestamp_format"`
+	Suffixes        map[string]string `yaml:"suffixes" json:"suffixes"`
 }
 
 type ValidationConfig struct {
-	RequiredColumns []string `yaml:"required_columns"`
-	OptionalColumns []string `yaml:"optional_columns"`
+	RequiredColumns []string `yaml:"required_columns" json:"required_columns"`
+	OptionalColumns []string `yaml:"optional_columns" json:"optional_columns"`
 }
 
 type ProcessingConfig struct {
-	ParallelEnabled bool `yaml:"parallel_enabled"`
-	MaxWorkers      int  `yaml:"max_workers"`
-	BufferSize      int  `yaml:"buffer_size"`
+	ParallelEnabled bool `yaml:"parallel_enabled" json:"parallel_enabled"`
+	MaxWorkers      int  `yaml:"max_workers" json:"max_workers"`
+	BufferSize      int  `yaml:"buffer_size" json:"buffer_size"`
 }
 
 // DasipConfig contiene la configuración del mapeo DASIP
 type DasipConfig struct {
-	DefaultPath  string            `yaml:"default_path"`
-	DasipMapping map[string]string `yaml:"dasip_mapping"`
+	DefaultPath  string            `yaml:"default_path" json:"default_path"`
+	DasipMapping map[string]string `yaml:"dasip_mapping" json:"dasip_mapping"`
 }
 
 var (
-	// Global representa la configuración global de la aplicación
-	Global *AppConfig
-	
-	// Dasip representa la configuración de mapeo DASIP
-	Dasip *DasipConfig
+	// No global variables to ensure thread safety and testability
 )
 
 // Load carga la configuración principal desde un archivo YAML
-func Load(configPath string) error {
+func Load(configPath string) (*AppConfig, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return fmt.Errorf("error leyendo archivo de configuración '%s': %w", configPath, err)
+		return nil, fmt.Errorf("error leyendo archivo de configuración '%s': %w", configPath, err)
 	}
 
 	var cfg AppConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return fmt.Errorf("error parseando configuración YAML: %w", err)
+		return nil, fmt.Errorf("error parseando configuración YAML: %w", err)
 	}
 
 	// Aplicar valores por defecto si no están configurados
-	applyDefaults(&cfg)
+	cfg.applyDefaults()
 	
 	// Validar configuración
-	if err := validate(&cfg); err != nil {
-		return fmt.Errorf("configuración inválida: %w", err)
+	if err := cfg.validate(); err != nil {
+		return nil, fmt.Errorf("configuración inválida: %w", err)
 	}
 
-	Global = &cfg
-	return nil
+	return &cfg, nil
 }
 
 // LoadDasipConfig carga la configuración de DASIP desde un archivo YAML
-func LoadDasipConfig(configPath string) error {
+func LoadDasipConfig(configPath string) (*DasipConfig, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return fmt.Errorf("error leyendo archivo de configuración DASIP '%s': %w", configPath, err)
+		return nil, fmt.Errorf("error leyendo archivo de configuración DASIP '%s': %w", configPath, err)
 	}
 
 	var cfg DasipConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return fmt.Errorf("error parseando configuración DASIP: %w", err)
+		return nil, fmt.Errorf("error parseando configuración DASIP: %w", err)
 	}
 
 	// Validar configuración DASIP
@@ -123,15 +118,28 @@ func LoadDasipConfig(configPath string) error {
 	}
 
 	if len(cfg.DasipMapping) == 0 {
-		return fmt.Errorf("el mapeo de DASIP está vacío")
+		return nil, fmt.Errorf("el mapeo de DASIP está vacío")
 	}
 
-	Dasip = &cfg
+	return &cfg, nil
+}
+
+// Save guarda la configuración principal en un archivo YAML
+func (cfg *AppConfig) Save(configPath string) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("error serializando configuración principal: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("error escribiendo archivo de configuración principal '%s': %w", configPath, err)
+	}
+
 	return nil
 }
 
 // applyDefaults aplica valores por defecto a la configuración
-func applyDefaults(cfg *AppConfig) {
+func (cfg *AppConfig) applyDefaults() {
 	// Configuración de procesamiento
 	if cfg.Processing.MaxWorkers == 0 {
 		cfg.Processing.MaxWorkers = runtime.NumCPU()
@@ -158,7 +166,7 @@ func applyDefaults(cfg *AppConfig) {
 }
 
 // validate valida la configuración cargada
-func validate(cfg *AppConfig) error {
+func (cfg *AppConfig) validate() error {
 	// Validar que existan archivos críticos
 	if cfg.Files.Templates == "" {
 		return fmt.Errorf("ruta de templates no especificada")
@@ -180,26 +188,36 @@ func validate(cfg *AppConfig) error {
 	return nil
 }
 
+// Save guarda la configuración de DASIP en un archivo YAML
+func (d *DasipConfig) Save(configPath string) error {
+	data, err := yaml.Marshal(d)
+	if err != nil {
+		return fmt.Errorf("error serializando configuración DASIP: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("error escribiendo archivo de configuración DASIP '%s': %w", configPath, err)
+	}
+
+	return nil
+}
+
 // GetIfsParentPath retorna el path IFS basado en el valor de DASIP
-func GetIfsParentPath(dasIPVal string) string {
-	if Dasip == nil {
+func (d *DasipConfig) GetIfsParentPath(dasIPVal string) string {
+	if d == nil {
 		return "SCADA/RTU" // Fallback
 	}
 
-	if path, exists := Dasip.DasipMapping[dasIPVal]; exists {
+	if path, exists := d.DasipMapping[dasIPVal]; exists {
 		return path
 	}
 
-	return Dasip.DefaultPath
+	return d.DefaultPath
 }
 
 // EnsureOutputDir asegura que el directorio de salida exista
-func EnsureOutputDir() error {
-	if Global == nil {
-		return fmt.Errorf("configuración no cargada")
-	}
-
-	if err := os.MkdirAll(Global.Files.OutputDir, 0755); err != nil {
+func (cfg *AppConfig) EnsureOutputDir() error {
+	if err := os.MkdirAll(cfg.Files.OutputDir, 0755); err != nil {
 		return fmt.Errorf("error creando directorio de salida: %w", err)
 	}
 
@@ -207,20 +225,13 @@ func EnsureOutputDir() error {
 }
 
 // GetOutputPath construye la ruta completa de un archivo de salida
-func GetOutputPath(filename string) string {
-	if Global == nil {
-		return filename
-	}
-	return filepath.Join(Global.Files.OutputDir, filename)
+func (cfg *AppConfig) GetOutputPath(filename string) string {
+	return filepath.Join(cfg.Files.OutputDir, filename)
 }
 
 // IsFormatSupported verifica si un formato de archivo está soportado
-func IsFormatSupported(format string) bool {
-	if Global == nil {
-		return false
-	}
-
-	for _, supported := range Global.Files.SupportedInputFormats {
+func (cfg *AppConfig) IsFormatSupported(format string) bool {
+	for _, supported := range cfg.Files.SupportedInputFormats {
 		if supported == format {
 			return true
 		}
@@ -229,17 +240,11 @@ func IsFormatSupported(format string) bool {
 }
 
 // GetTemplatesPath retorna la ruta al archivo de templates
-func GetTemplatesPath() string {
-	if Global == nil {
-		return "templates.json"
-	}
-	return Global.Files.Templates
+func (cfg *AppConfig) GetTemplatesPath() string {
+	return cfg.Files.Templates
 }
 
 // GetDasipConfigPath retorna la ruta al archivo de configuración DASIP
-func GetDasipConfigPath() string {
-	if Global == nil {
-		return "dasip_config.yaml"
-	}
-	return Global.Files.DasipMapping
+func (cfg *AppConfig) GetDasipConfigPath() string {
+	return cfg.Files.DasipMapping
 }

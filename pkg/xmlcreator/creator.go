@@ -10,7 +10,7 @@ import (
 )
 
 // CreateXMLFromFile procesa un archivo (CSV o Excel) y genera archivos XML
-func CreateXMLFromFile(inputFilePath string) error {
+func CreateXMLFromFile(inputFilePath string, cfg *config.AppConfig, dasipCfg *config.DasipConfig, tm *TemplateManager) error {
 	// Leer datos del archivo
 	log.Printf("[INFO] Leyendo datos desde: %s", inputFilePath)
 	_, dataRows, headerMap, err := fileio.ReadData(inputFilePath)
@@ -24,20 +24,20 @@ func CreateXMLFromFile(inputFilePath string) error {
 	}
 
 	// Validar columnas requeridas
-	if err := fileio.ValidateHeaders(headerMap, config.Global.Validation.RequiredColumns); err != nil {
+	if err := fileio.ValidateHeaders(headerMap, cfg.Validation.RequiredColumns); err != nil {
 		return fmt.Errorf("validación de columnas fallida: %w", err)
 	}
 
 	log.Printf("[OK] Datos leídos correctamente: %d filas", len(dataRows))
 
 	// Procesar las filas
-	result, err := processRows(dataRows, headerMap)
+	result, err := processRows(dataRows, headerMap, tm)
 	if err != nil {
 		return fmt.Errorf("error procesando filas: %w", err)
 	}
 
 	// Generar archivos XML
-	if err := generateXMLFiles(result, dataRows[0], headerMap); err != nil {
+	if err := generateXMLFiles(result, dataRows[0], headerMap, cfg, dasipCfg); err != nil {
 		return fmt.Errorf("error generando archivos XML: %w", err)
 	}
 
@@ -53,7 +53,7 @@ type ProcessingResult struct {
 }
 
 // processRows procesa todas las filas del archivo de datos
-func processRows(dataRows [][]string, headerMap map[string]int) (*ProcessingResult, error) {
+func processRows(dataRows [][]string, headerMap map[string]int, tm *TemplateManager) (*ProcessingResult, error) {
 	result := &ProcessingResult{
 		ElementsIMM:  make([]any, 0),
 		ElementsIFS:  make([]any, 0),
@@ -76,7 +76,7 @@ func processRows(dataRows [][]string, headerMap map[string]int) (*ProcessingResu
 		}
 
 		// Obtener plantilla
-		template, isTemplateFound := GetTemplate(elementKey)
+		template, isTemplateFound := tm.GetTemplate(elementKey)
 		isBreakerType := (isTemplateFound && template.Breaker != nil) || elementKey == "CB"
 
 		// Guardar datos del CB para enlaces posteriores
@@ -97,7 +97,7 @@ func processRows(dataRows [][]string, headerMap map[string]int) (*ProcessingResu
 			continue
 		}
 
-		element, err := createIMMElement(template, displayName, row, headerMap)
+		element, err := createIMMElement(template, displayName, row, headerMap, tm)
 		if err != nil {
 			log.Printf("[WARN] Error procesando elemento '%s': %v", elementKey, err)
 			continue
@@ -184,9 +184,9 @@ func createIfsPoint(row []string, headerMap map[string]int, displayName string, 
 }
 
 // createIMMElement crea un elemento IMM basado en una plantilla
-func createIMMElement(template ElementDef, displayName string, row []string, headerMap map[string]int) (any, error) {
+func createIMMElement(template ElementDef, displayName string, row []string, headerMap map[string]int, tm *TemplateManager) (any, error) {
 	// Hacer copia profunda de la plantilla
-	instance, err := DeepCopyElement(template)
+	instance, err := tm.DeepCopyElement(template)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +267,7 @@ func createBreakerLinks(cbRow []string, allRows [][]string, headerMap map[string
 }
 
 // generateXMLFiles genera los archivos XML IFS e IMM
-func generateXMLFiles(result *ProcessingResult, firstRow []string, headerMap map[string]int) error {
+func generateXMLFiles(result *ProcessingResult, firstRow []string, headerMap map[string]int, cfg *config.AppConfig, dasipCfg *config.DasipConfig) error {
 	// Obtener valores básicos
 	b3 := fileio.GetCellValue(firstRow, headerMap["B3"])
 	empresa := fileio.GetCellValue(firstRow, headerMap["EMPRESA"])
@@ -277,16 +277,16 @@ func generateXMLFiles(result *ProcessingResult, firstRow []string, headerMap map
 
 	// Obtener DASIP y mapear a IFS path
 	dasIP := fileio.GetCellValueOrDefault(firstRow, headerMap, "DASIP", "")
-	ifsParentPath := config.GetIfsParentPath(dasIP)
+	ifsParentPath := dasipCfg.GetIfsParentPath(dasIP)
 	log.Printf("[INFO] DASIP '%s' -> %s", dasIP, ifsParentPath)
 
 	// Generar archivo IFS
-	if err := generateIFSFile(b3, ifsParentPath, result.ElementsIFS); err != nil {
+	if err := generateIFSFile(b3, ifsParentPath, result.ElementsIFS, cfg); err != nil {
 		return fmt.Errorf("error generando archivo IFS: %w", err)
 	}
 
 	// Generar archivo IMM
-	if err := generateIMMFile(b3, empresa, region, b1, b2, result); err != nil {
+	if err := generateIMMFile(b3, empresa, region, b1, b2, result, cfg); err != nil {
 		return fmt.Errorf("error generando archivo IMM: %w", err)
 	}
 
@@ -294,7 +294,7 @@ func generateXMLFiles(result *ProcessingResult, firstRow []string, headerMap map
 }
 
 // generateIFSFile genera el archivo XML IFS
-func generateIFSFile(b3, parentPath string, elements []any) error {
+func generateIFSFile(b3, parentPath string, elements []any, cfg *config.AppConfig) error {
 	if len(elements) == 0 {
 		log.Printf("[INFO] No se generará archivo IFS (sin elementos)")
 		return nil
@@ -305,12 +305,12 @@ func generateIFSFile(b3, parentPath string, elements []any) error {
 		Elements: elements,
 	}}
 
-	fileName := fmt.Sprintf("%s%s", b3, config.Global.Output.Suffixes["ifs"])
-	return createAndSaveXML(fileName, parents)
+	fileName := fmt.Sprintf("%s%s", b3, cfg.Output.Suffixes["ifs"])
+	return createAndSaveXML(fileName, parents, cfg)
 }
 
 // generateIMMFile genera el archivo XML IMM
-func generateIMMFile(b3, empresa, region, b1, b2 string, result *ProcessingResult) error {
+func generateIMMFile(b3, empresa, region, b1, b2 string, result *ProcessingResult, cfg *config.AppConfig) error {
 	if len(result.ElementsIMM) == 0 {
 		log.Printf("[INFO] No se generará archivo IMM (sin elementos)")
 		return nil
@@ -331,12 +331,12 @@ func generateIMMFile(b3, empresa, region, b1, b2 string, result *ProcessingResul
 		})
 	}
 
-	fileName := fmt.Sprintf("%s%s", b3, config.Global.Output.Suffixes["imm"])
-	return createAndSaveXML(fileName, parents)
+	fileName := fmt.Sprintf("%s%s", b3, cfg.Output.Suffixes["imm"])
+	return createAndSaveXML(fileName, parents, cfg)
 }
 
 // createAndSaveXML crea y guarda un archivo XML
-func createAndSaveXML(fileName string, parents []Parent) error {
+func createAndSaveXML(fileName string, parents []Parent, cfg *config.AppConfig) error {
 	// Validar que haya contenido
 	if len(parents) == 0 || (len(parents[0].Elements) == 0 && (len(parents) == 1 || len(parents[1].Elements) == 0)) {
 		log.Printf("[INFO] No se generará '%s' (sin elementos)", fileName)
@@ -345,16 +345,16 @@ func createAndSaveXML(fileName string, parents []Parent) error {
 
 	// Construir estructura XDF
 	xdf := XDF{
-		Lang:    config.Global.XML.Lang,
-		Version: config.Global.XML.Version,
+		Lang:    cfg.XML.Lang,
+		Version: cfg.XML.Version,
 		Instances: Instances{
 			Parents: parents,
 		},
 	}
 
 	// Escribir XML
-	fullPath := config.GetOutputPath(fileName)
-	writer := fileio.NewXMLWriter(fullPath, config.Global.XML.Indent)
+	fullPath := cfg.GetOutputPath(fileName)
+	writer := fileio.NewXMLWriter(fullPath, cfg.XML.Indent)
 
 	if err := writer.Write(xdf); err != nil {
 		return fmt.Errorf("error escribiendo XML '%s': %w", fileName, err)
