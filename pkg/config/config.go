@@ -17,9 +17,19 @@ type AppConfig struct {
 	XML        XMLConfig         `yaml:"xml" json:"xml"`
 	Logging    LoggingConfig     `yaml:"logging" json:"logging"`
 	Database   DatabaseConfig    `yaml:"database" json:"database"`
+	Postgres   PostgresConfig    `yaml:"postgres" json:"postgres"`
 	Output     OutputConfig      `yaml:"output" json:"output"`
 	Validation ValidationConfig  `yaml:"validation" json:"validation"`
 	Processing ProcessingConfig  `yaml:"processing" json:"processing"`
+}
+
+type PostgresConfig struct {
+	Host     string `yaml:"host" json:"host"`
+	Port     int    `yaml:"port" json:"port"`
+	User     string `yaml:"user" json:"user"`
+	Password string `yaml:"password" json:"password"`
+	DBName   string `yaml:"dbname" json:"dbname"`
+	SSLMode  string `yaml:"sslmode" json:"sslmode"`
 }
 
 type AppInfo struct {

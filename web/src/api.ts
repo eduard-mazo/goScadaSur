@@ -9,6 +9,15 @@ const api = axios.create({
   },
 });
 
+// Interceptor para añadir el token JWT a todas las peticiones
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('gs_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 export interface AppConfig {
   app: {
     name: string;
@@ -34,6 +43,13 @@ export interface AppConfig {
     connection_timeout: number;
     csharp_executable: string;
   };
+  postgres: {
+    host: string;
+    port: number;
+    user: string;
+    dbname: string;
+    sslmode: string;
+  };
   processing: {
     parallel_enabled: boolean;
     max_workers: number;
@@ -54,6 +70,29 @@ export interface TemplateStats {
 export interface DasipConfig {
   default_path: string;
   dasip_mapping: Record<string, string>;
+}
+
+export interface SearchStationRequest {
+  host: string;
+  path: string;
+  user: string;
+  password?: string;
+  aor: string;
+}
+
+export interface QueryRequest {
+  query: string;
+}
+
+export interface LoginRequest {
+  username: string;
+  password?: string;
+}
+
+export interface LoginResponse {
+  token: string;
+  username: string;
+  role: string;
 }
 
 export const getAppConfig = async () => {
@@ -91,13 +130,44 @@ export const getTemplateStats = async () => {
   return response.data;
 };
 
-export const searchStation = async (data: any) => {
+export const searchStation = async (data: SearchStationRequest) => {
   const response = await api.post('/search', data);
   return response.data;
 };
 
-export const runQuery = async (data: any) => {
+export const runQuery = async (data: QueryRequest) => {
   const response = await api.post('/query', data);
+  return response.data;
+};
+
+export const login = async (data: LoginRequest) => {
+  const response = await api.post<LoginResponse>('/auth/login', data);
+  if (response.data.token) {
+    localStorage.setItem('gs_token', response.data.token);
+    localStorage.setItem('gs_user', JSON.stringify(response.data));
+  }
+  return response.data;
+};
+
+export const registerUser = async (data: Record<string, unknown>) => {
+  const response = await api.post('/auth/register', data);
+  return response.data;
+};
+
+export const logout = () => {
+  localStorage.removeItem('gs_token');
+  localStorage.removeItem('gs_user');
+  window.location.reload();
+};
+
+export const uploadFile = async (file: File) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await api.post('/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
   return response.data;
 };
 

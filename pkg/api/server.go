@@ -8,8 +8,11 @@ import (
 	"goScadaSur/pkg/database"
 	"goScadaSur/pkg/xmlcreator"
 	"goScadaSur/web"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 )
 
 // Server representa el servidor de API para la UI
@@ -18,16 +21,23 @@ type Server struct {
 	DasipCfg   *config.DasipConfig
 	TM         *xmlcreator.TemplateManager
 	DBClient   *database.DatabaseClient
+	PGClient   *database.PostgresClient
 	ConfigPath string
 }
 
 // NewServer crea una nueva instancia del servidor
 func NewServer(appCfg *config.AppConfig, dasipCfg *config.DasipConfig, tm *xmlcreator.TemplateManager, configPath string) *Server {
+	pgClient, err := database.NewPostgresClient(appCfg)
+	if err != nil {
+		log.Printf("[WARN] No se pudo conectar a Postgres: %v", err)
+	}
+
 	return &Server{
 		AppCfg:     appCfg,
 		DasipCfg:   dasipCfg,
 		TM:         tm,
 		DBClient:   database.NewDatabaseClient(appCfg),
+		PGClient:   pgClient,
 		ConfigPath: configPath,
 	}
 }
@@ -44,6 +54,16 @@ func (s *Server) Start(port int) error {
 	mux.HandleFunc("/api/search", s.handleSearch)
 	mux.HandleFunc("/api/query", s.handleQuery)
 	mux.HandleFunc("/api/generate", s.handleGenerate)
+	mux.HandleFunc("/api/upload", s.handleUpload)
+
+	// Rutas de Autenticación
+	mux.HandleFunc("/api/auth/register", s.handleRegister)
+	mux.HandleFunc("/api/auth/login", s.handleLogin)
+
+	// Rutas de Jobs (Requieren Autenticación)
+	mux.HandleFunc("/api/jobs", s.handleJobs)
+	mux.HandleFunc("/api/jobs/history", s.handleJobHistory)
+	mux.HandleFunc("/api/jobs/comments", s.handleComments)
 	
 	// Servir archivos estáticos del frontend (React)
 	mux.Handle("/", http.FileServer(web.GetFS()))
@@ -51,7 +71,10 @@ func (s *Server) Start(port int) error {
 	addr := fmt.Sprintf(":%d", port)
 	log.Printf("[INFO] Servidor API iniciado en http://localhost%s", addr)
 	
-	return http.ListenAndServe(addr, s.corsMiddleware(mux))
+	// Aplicar CORS y Autenticación
+	handler := s.corsMiddleware(s.AuthMiddleware(mux))
+	
+	return http.ListenAndServe(addr, handler)
 }
 
 // corsMiddleware añade cabeceras CORS
@@ -297,4 +320,55 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 // handleGenerate maneja la generación de XML desde el payload JSON
 func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	s.JSONResponse(w, map[string]string{"status": "to_be_integrated_with_filesystem"}, http.StatusOK)
+}
+
+// handleUpload maneja la carga de archivos (CSV/Excel) y su procesamiento automático
+func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.ErrorResponse(w, "Método no permitido", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Limitar tamaño del archivo (e.g., 10MB)
+	r.ParseMultipartForm(10 << 20)
+
+	file, handler, err := r.FormFile("file")
+	if err != nil {
+		s.ErrorResponse(w, "Error recuperando el archivo del formulario", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	log.Printf("[UPLOAD] Recibiendo archivo: %s (%d bytes)", handler.Filename, handler.Size)
+
+	// Crear un archivo temporal
+	tempFile, err := os.CreateTemp("", "goscada-upload-*"+filepath.Ext(handler.Filename))
+	if err != nil {
+		s.ErrorResponse(w, "Error creando archivo temporal", http.StatusInternalServerError)
+		return
+	}
+	defer os.Remove(tempFile.Name())
+	defer tempFile.Close()
+
+	// Guardar el contenido subido
+	if _, err := io.Copy(tempFile, file); err != nil {
+		s.ErrorResponse(w, "Error guardando el contenido del archivo", http.StatusInternalServerError)
+		return
+	}
+
+	// Cerrar para que xmlcreator pueda abrirlo
+	tempFile.Close()
+
+	// Procesar con xmlcreator
+	err = xmlcreator.CreateXMLFromFile(tempFile.Name(), s.AppCfg, s.DasipCfg, s.TM)
+	if err != nil {
+		log.Printf("[ERROR] Error en generación: %v", err)
+		s.ErrorResponse(w, fmt.Sprintf("Error procesando archivo: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.JSONResponse(w, map[string]string{
+		"message": "Archivo procesado correctamente. XMLs generados en " + s.AppCfg.Files.OutputDir,
+		"file":    handler.Filename,
+	}, http.StatusOK)
 }

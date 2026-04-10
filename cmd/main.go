@@ -78,8 +78,8 @@ desde archivos CSV o Excel.`,
 		Args:  cobra.NoArgs,
 		Run:   runCSVToXML,
 	}
-	csvXmlCmd.Flags().StringVar(&path, "path", "", "Ruta del archivo CSV/Excel")
-	csvXmlCmd.Flags().StringVar(&aor, "aor", "", "Área de responsabilidad")
+	csvXmlCmd.Flags().StringVar(&path, "path", "", "Ruta del archivo CSV/Excel a procesar")
+	_ = csvXmlCmd.MarkFlagRequired("path")
 
 	// Comando: direct-query
 	directQueryCmd := &cobra.Command{
@@ -168,9 +168,15 @@ func runStationSearch(cmd *cobra.Command, args []string) {
 		log.Fatalf("[ERROR] %v", err)
 	}
 
-	if host == "" { host = readInput("Host: ") }
-	if user == "" { user = readInput("Usuario: ") }
-	if password == "" { password = readPassword() }
+	if host == "" {
+		host = readInput("Host: ")
+	}
+	if user == "" {
+		user = readInput("Usuario: ")
+	}
+	if password == "" {
+		password = readPassword()
+	}
 
 	input := database.CSharpInput{
 		Mode: "station_search", User: user, Password: password, Host: host,
@@ -198,9 +204,15 @@ func runStationSearch(cmd *cobra.Command, args []string) {
 
 func runDirectQuery(cmd *cobra.Command, args []string) {
 	query := args[0]
-	if host == "" { host = readInput("Host: ") }
-	if user == "" { user = readInput("Usuario: ") }
-	if password == "" { password = readPassword() }
+	if host == "" {
+		host = readInput("Host: ")
+	}
+	if user == "" {
+		user = readInput("Usuario: ")
+	}
+	if password == "" {
+		password = readPassword()
+	}
 
 	input := database.CSharpInput{
 		Mode: "direct_query", User: user, Password: password, Host: host,
