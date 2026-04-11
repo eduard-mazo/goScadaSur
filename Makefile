@@ -7,6 +7,20 @@ CMD_DIR=cmd
 CONFIG_DIR=configs
 OUTPUT_DIR=output
 
+# Detectar sistema operativo (compatible con MSYS2/MinGW/Windows nativo)
+UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
+ifneq (,$(filter MINGW% CYGWIN% Windows%,$(UNAME_S)))
+    BINARY_EXT := .exe
+    # GOCACHE: LocalAppData no siempre está disponible en MSYS2 no-login
+    GOCACHE    ?= $(shell echo "$$USERPROFILE/AppData/Local/go-build" | sed 's|\\|/|g')
+    export GOCACHE
+else
+    BINARY_EXT :=
+endif
+RM_RF := rm -rf
+
+BINARY=$(BINARY_NAME)$(BINARY_EXT)
+
 # Plataformas de compilación
 PLATFORMS=windows linux darwin
 ARCHITECTURES=amd64 arm64
@@ -33,12 +47,19 @@ deps:
 	@go mod tidy
 	@printf "\033[0;32m✓ Dependencias descargadas\033[0m\n"
 
-## build: Compila la aplicación
+## build: Compila la aplicación (con actualización de dependencias)
 build: deps
 	@printf "\033[1;33mCompilando $(BINARY_NAME)...\033[0m\n"
 	@mkdir -p $(BUILD_DIR)
-	@go build -o $(BUILD_DIR)/$(BINARY_NAME) ./$(CMD_DIR)
-	@printf "\033[0;32m✓ Compilación exitosa: $(BUILD_DIR)/$(BINARY_NAME)\033[0m\n"
+	@go build -o $(BUILD_DIR)/$(BINARY) ./$(CMD_DIR)
+	@printf "\033[0;32m[OK] Compilacion exitosa: $(BUILD_DIR)/$(BINARY)\033[0m\n"
+
+## build-dev: Compila sin actualizar dependencias (más rápido para desarrollo)
+build-dev:
+	@printf "\033[1;33mCompilando $(BINARY_NAME) (dev)...\033[0m\n"
+	@mkdir -p $(BUILD_DIR)
+	@go build -o $(BUILD_DIR)/$(BINARY) ./$(CMD_DIR)
+	@printf "\033[0;32m[OK] Compilacion exitosa: $(BUILD_DIR)/$(BINARY)\033[0m\n"
 
 ## build-all: Compila para todas las plataformas
 build-all: deps
@@ -56,8 +77,8 @@ build-all: deps
 
 ## run: Ejecuta la aplicación con argumentos (ej: make run ARGS="version")
 run: build
-	@printf "\033[1;33mEjecutando $(BINARY_NAME)...\033[0m\n"
-	@./$(BUILD_DIR)/$(BINARY_NAME) $(ARGS)
+	@printf "\033[1;33mEjecutando $(BINARY)...\033[0m\n"
+	@./$(BUILD_DIR)/$(BINARY) $(ARGS)
 
 ## test: Ejecuta tests
 test:
@@ -103,22 +124,23 @@ check: format lint test
 install: build
 	@printf "\033[1;33mInstalando $(BINARY_NAME)...\033[0m\n"
 	@go install ./$(CMD_DIR)
-	@printf "\033[0;32m✓ $(BINARY_NAME) instalado en $$GOPATH/bin\033[0m\n"
+	@printf "\033[0;32m[OK] $(BINARY_NAME) instalado en $$GOPATH/bin\033[0m\n"
 
 ## clean: Limpia archivos generados
 clean:
 	@printf "\033[1;33mLimpiando...\033[0m\n"
-	@rm -rf $(BUILD_DIR)
-	@rm -rf $(OUTPUT_DIR)
+	@$(RM_RF) $(BUILD_DIR)
+	@$(RM_RF) $(OUTPUT_DIR)
 	@rm -f coverage.out coverage.html
+	@rm -f $(BINARY_NAME).exe $(BINARY_NAME)
 	@go clean
-	@printf "\033[0;32m✓ Limpieza completada\033[0m\n"
+	@printf "\033[0;32m[OK] Limpieza completada\033[0m\n"
 
 ## clean-output: Limpia solo archivos de salida
 clean-output:
 	@printf "\033[1;33mLimpiando directorio de salida...\033[0m\n"
-	@rm -rf $(OUTPUT_DIR)/*
-	@printf "\033[0;32m✓ Output limpiado\033[0m\n"
+	@$(RM_RF) $(OUTPUT_DIR)/*
+	@printf "\033[0;32m[OK] Output limpiado\033[0m\n"
 
 ## setup: Configuración inicial del proyecto
 setup:
@@ -170,7 +192,12 @@ example-csv:
 	@echo "EMPRESA,REGION,AOR,B1,B2,B3,PKEY,MIEC104,CIEC104,TYPE,ELEMENT,INFO,SBO,MLB,MMB,MHB,CLB,CMB,CHB,DASIP" > example.csv
 	@echo "EPM,RORIENTE,107,M20117,LACEJA,TEST001,10111027,1,,MV,I_R,MvMoment,,1,0,0,,,,1" >> example.csv
 	@echo "EPM,RORIENTE,107,M20117,LACEJA,TEST001,10111028,2,,MV,I_S,MvMoment,,2,0,0,,,,1" >> example.csv
-	@printf "\033[0;32m✓ Archivo de ejemplo creado: example.csv\033[0m\n"
+	@printf "\033[0;32m[OK] Archivo de ejemplo creado: example.csv\033[0m\n"
+
+## test-csv-xml: Genera CSV de ejemplo y ejecuta conversion csv-xml (prueba el frontend de salida)
+test-csv-xml: build-dev example-csv
+	@printf "\033[1;33mProbando conversion CSV -> XML...\033[0m\n"
+	@./$(BUILD_DIR)/$(BINARY) csv-xml --path example.csv --aor 107
 
 ## docs: Genera documentación
 docs:

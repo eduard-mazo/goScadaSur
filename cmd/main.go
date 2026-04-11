@@ -188,30 +188,74 @@ func runDirectQuery(cmd *cobra.Command, args []string) {
 	executeCommand("direct_query", query, "", "")
 }
 
+// bannerBorder es el borde fijo para todos los banners de salida (53 chars)
+const bannerBorder = "+---------------------------------------------------+"
+
+// printBanner imprime un mensaje enmarcado en un banner consistente
+func printBanner(w io.Writer, msg string) {
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, bannerBorder)
+	fmt.Fprintf(w, "| %-49s |\n", msg)
+	fmt.Fprintln(w, bannerBorder)
+}
+
 // runCSVToXML ejecuta la conversión de CSV/Excel a XML
 func runCSVToXML(cmd *cobra.Command, args []string) {
-	// Verificar que el archivo exista
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		log.Fatalf("[ERROR] El archivo '%s' no existe", path)
-	}
-
-	// Verificar formato soportado
-	ext := strings.ToLower(filepath.Ext(path))
-	ext = strings.TrimPrefix(ext, ".")
-
+	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(path), "."))
 	if !config.IsFormatSupported(ext) {
-		log.Fatalf("[ERROR] Formato '%s' no soportado. Formatos válidos: %v",
+		fmt.Fprintf(os.Stderr, "[ERROR] Formato '%s' no soportado. Formatos validos: %v\n",
 			ext, config.Global.Files.SupportedInputFormats)
+		os.Exit(1)
 	}
 
 	log.Printf("[INFO] Procesando archivo: %s (formato: %s)", path, strings.ToUpper(ext))
 
-	// Crear XMLs
 	if err := xmlcreator.CreateXMLFromFile(path); err != nil {
-		log.Fatalf("[ERROR] Error generando XML: %v", err)
+		printBanner(os.Stderr, "[FALLO] "+err.Error())
+		os.Exit(1)
 	}
 
-	log.Println("[OK] Proceso completado exitosamente")
+	printBanner(os.Stdout, "[OK] Proceso completado exitosamente")
+	listOutputFiles()
+}
+
+// listOutputFiles muestra los archivos del directorio de salida con nombre y tamaño
+func listOutputFiles() {
+	outputDir := config.Global.Files.OutputDir
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		fmt.Printf("[WARN] No se puede leer el directorio de salida '%s': %v\n", outputDir, err)
+		return
+	}
+
+	var count int
+	var sb strings.Builder
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		count++
+		size := "?"
+		if info, err := e.Info(); err == nil {
+			size = fmt.Sprintf("%.1f KB", float64(info.Size())/1024)
+		}
+		fmt.Fprintf(&sb, "  [%d] %-38s %8s\n", count, e.Name(), size)
+	}
+
+	if count == 0 {
+		fmt.Printf("[INFO] El directorio '%s' esta vacio.\n", outputDir)
+		return
+	}
+
+	header := fmt.Sprintf("+-- Archivos en '%s' (%d) ", outputDir, count)
+	pad := len(bannerBorder) - len(header) - 1
+	if pad < 0 {
+		pad = 0
+	}
+	fmt.Println()
+	fmt.Println(header + strings.Repeat("-", pad) + "+")
+	fmt.Print(sb.String())
+	fmt.Println(bannerBorder)
 }
 
 // executeCommand ejecuta un comando hacia la base de datos C#
@@ -357,8 +401,11 @@ func executeCommand(mode, query, path, aor string) {
 		// Generar XMLs automáticamente
 		log.Println("[INFO] Generando archivos XML...")
 		if err := xmlcreator.CreateXMLFromFile(filename); err != nil {
-			log.Fatalf("[ERROR] Error generando XML: %v", err)
+			printBanner(os.Stderr, "[FALLO] "+err.Error())
+			return
 		}
+		printBanner(os.Stdout, "[OK] Archivos XML generados correctamente")
+		listOutputFiles()
 	}
 }
 
