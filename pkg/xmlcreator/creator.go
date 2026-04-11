@@ -9,51 +9,62 @@ import (
 	"strings"
 )
 
-// columnAliases mapea nombres alternativos de columnas al nombre canónico esperado.
+type Logger interface {
+	Infof(format string, args ...any)
+	Warnf(format string, args ...any)
+	Errorf(format string, args ...any)
+}
+
+type defaultLogger struct{}
+
+func (defaultLogger) Infof(f string, a ...any)  { log.Printf("[INFO] "+f, a...) }
+func (defaultLogger) Warnf(f string, a ...any)  { log.Printf("[WARN] "+f, a...) }
+func (defaultLogger) Errorf(f string, a ...any) { log.Printf("[ERROR] "+f, a...) }
+
 var columnAliases = map[string]string{
 	"M_LB": "MLB", "M_MB": "MMB", "M_HB": "MHB",
 	"C_LB": "CLB", "C_MB": "CMB", "C_HB": "CHB",
 	"SBE": "SBO",
 }
 
-// normalizeHeaderMap aplica los alias para que el resto del código encuentre las columnas.
 func normalizeHeaderMap(h map[string]int) map[string]int {
 	out := make(map[string]int, len(h))
 	for k, v := range h {
 		out[k] = v
 	}
-	for alias, canonical := range columnAliases {
-		if idx, ok := h[alias]; ok {
-			if _, exists := out[canonical]; !exists {
-				out[canonical] = idx
+	for a, c := range columnAliases {
+		if idx, ok := h[a]; ok {
+			if _, ex := out[c]; !ex {
+				out[c] = idx
 			}
 		}
 	}
 	return out
 }
 
-// CreateXMLFromFile lee un archivo (CSV/Excel), agrupa filas por estación
-// (EMPRESA/REGION/B1/B2/B3) y genera un par de XML (IFS+IMM) por cada estación.
-func CreateXMLFromFile(inputFilePath string, cfg *config.AppConfig, dasipCfg *config.DasipConfig, tm *TemplateManager) error {
-	log.Printf("[INFO] Leyendo datos desde: %s", inputFilePath)
+// CreateXMLFromFile mantiene la firma original (CLI).
+func CreateXMLFromFile(p string, cfg *config.AppConfig, dCfg *config.DasipConfig, tm *TemplateManager) error {
+	return CreateXMLFromFileWithLogger(p, cfg, dCfg, tm, defaultLogger{})
+}
+
+// CreateXMLFromFileWithLogger agrupa filas por estación y genera un par IFS+IMM por cada una.
+func CreateXMLFromFileWithLogger(inputFilePath string, cfg *config.AppConfig, dasipCfg *config.DasipConfig, tm *TemplateManager, lg Logger) error {
+	lg.Infof("Leyendo datos desde: %s", inputFilePath)
 	_, dataRows, headerMap, err := fileio.ReadData(inputFilePath)
 	if err != nil {
 		return fmt.Errorf("error leyendo archivo: %w", err)
 	}
 	if len(dataRows) == 0 {
-		log.Println("[WARN] El archivo no contiene datos para procesar")
+		lg.Warnf("El archivo no contiene datos para procesar")
 		return nil
 	}
-
 	headerMap = normalizeHeaderMap(headerMap)
-
 	if err := fileio.ValidateHeaders(headerMap, cfg.Validation.RequiredColumns); err != nil {
 		return fmt.Errorf("validación de columnas fallida: %w", err)
 	}
 
-	// Agrupar filas por estación preservando el orden de aparición.
 	groups := make(map[string][][]string)
-	order := make([]string, 0)
+	order := []string{}
 	for _, row := range dataRows {
 		if len(row) == 0 {
 			continue
@@ -70,27 +81,22 @@ func CreateXMLFromFile(inputFilePath string, cfg *config.AppConfig, dasipCfg *co
 		}
 		groups[key] = append(groups[key], row)
 	}
-
-	log.Printf("[OK] %d filas leídas, %d estaciones detectadas", len(dataRows), len(order))
+	lg.Infof("%d filas leídas, %d estaciones detectadas", len(dataRows), len(order))
 
 	for _, key := range order {
 		rows := groups[key]
-		log.Printf("[INFO] Procesando estación %s (%d filas)", key, len(rows))
-		result, err := processRows(rows, headerMap, tm)
+		lg.Infof("Procesando estación %s (%d filas)", key, len(rows))
+		result, err := processRows(rows, headerMap, tm, lg)
 		if err != nil {
-			log.Printf("[WARN] estación %s: %v", key, err)
+			lg.Warnf("estación %s: %v", key, err)
 			continue
 		}
-		if err := generateXMLFiles(result, rows[0], headerMap, cfg, dasipCfg); err != nil {
-			log.Printf("[WARN] estación %s: %v", key, err)
+		if err := generateXMLFiles(result, rows[0], headerMap, cfg, dasipCfg, lg); err != nil {
+			lg.Warnf("estación %s: %v", key, err)
 		}
 	}
 	return nil
 }
-
-// ====================================================================
-// El resto del archivo permanece igual al original.
-// ====================================================================
 
 type ProcessingResult struct {
 	ElementsIMM  []any
@@ -99,136 +105,126 @@ type ProcessingResult struct {
 	BreakerLinks []any
 }
 
-func processRows(dataRows [][]string, headerMap map[string]int, tm *TemplateManager) (*ProcessingResult, error) {
-	result := &ProcessingResult{ElementsIMM: make([]any, 0), ElementsIFS: make([]any, 0), BreakerLinks: make([]any, 0)}
-	var cbRowData []string
-	for rowIdx, row := range dataRows {
+func processRows(dataRows [][]string, h map[string]int, tm *TemplateManager, lg Logger) (*ProcessingResult, error) {
+	r := &ProcessingResult{ElementsIMM: []any{}, ElementsIFS: []any{}, BreakerLinks: []any{}}
+	var cb []string
+	for i, row := range dataRows {
 		if len(row) == 0 {
 			continue
 		}
-		elementKey := fileio.GetCellValue(row, headerMap["ELEMENT"])
-		if elementKey == "" {
-			log.Printf("[WARN] Fila %d: ELEMENT vacío", rowIdx+2)
+		k := fileio.GetCellValue(row, h["ELEMENT"])
+		if k == "" {
+			lg.Warnf("Fila %d: ELEMENT vacío", i+2)
 			continue
 		}
-		template, isTemplateFound := tm.GetTemplate(elementKey)
-		isBreakerType := (isTemplateFound && template.Breaker != nil) || elementKey == "CB"
-		if elementKey == "CB" {
-			cbRowData = row
+		tpl, found := tm.GetTemplate(k)
+		isBrk := (found && tpl.Breaker != nil) || k == "CB"
+		if k == "CB" {
+			cb = row
 		}
-		displayName := generateDisplayName(elementKey, row, headerMap)
-		result.ElementsIFS = append(result.ElementsIFS, createIfsPoint(row, headerMap, displayName, isBreakerType))
-		if !isTemplateFound {
-			log.Printf("[WARN] Plantilla '%s' no encontrada", elementKey)
+		dn := generateDisplayName(k, row, h)
+		r.ElementsIFS = append(r.ElementsIFS, createIfsPoint(row, h, dn, isBrk))
+		if !found {
+			lg.Warnf("Plantilla '%s' no encontrada", k)
 			continue
 		}
-		element, err := createIMMElement(template, displayName, row, headerMap, tm)
+		el, err := createIMMElement(tpl, dn, row, h, tm)
 		if err != nil {
-			log.Printf("[WARN] elemento '%s': %v", elementKey, err)
+			lg.Warnf("elemento '%s': %v", k, err)
 			continue
 		}
-		if element != nil {
-			result.ElementsIMM = append(result.ElementsIMM, element)
+		if el != nil {
+			r.ElementsIMM = append(r.ElementsIMM, el)
 		}
 	}
-	if cbRowData != nil {
-		result.BreakerLinks, result.BreakerName = createBreakerLinks(cbRowData, dataRows, headerMap)
+	if cb != nil {
+		r.BreakerLinks, r.BreakerName = createBreakerLinks(cb, dataRows, h)
 	}
-	return result, nil
+	return r, nil
 }
 
-func generateDisplayName(elementKey string, row []string, headerMap map[string]int) string {
-	if fileio.GetCellValue(row, headerMap["INFO"]) == "MvMoment" {
-		return strings.ReplaceAll(elementKey, "_", " ")
+func generateDisplayName(k string, row []string, h map[string]int) string {
+	if fileio.GetCellValue(row, h["INFO"]) == "MvMoment" {
+		return strings.ReplaceAll(k, "_", " ")
 	}
-	return elementKey
+	return k
 }
 
-func createIfsPoint(row []string, headerMap map[string]int, displayName string, isBreakerType bool) *IfsPoint {
-	var ifsNamePart, ifsPathPart string
-	if isBreakerType {
-		ifsNamePart = fmt.Sprintf("%s_%s", displayName, displayName)
-		ifsPathPart = fmt.Sprintf("%s/%s", displayName, displayName)
+func createIfsPoint(row []string, h map[string]int, dn string, brk bool) *IfsPoint {
+	var nm, pt string
+	if brk {
+		nm = fmt.Sprintf("%s_%s", dn, dn)
+		pt = fmt.Sprintf("%s/%s", dn, dn)
 	} else {
-		ifsNamePart = displayName
-		ifsPathPart = displayName
+		nm, pt = dn, dn
 	}
-	suffix := "M"
-	if fileio.GetCellValue(row, headerMap["TYPE"]) == "SP_SC" {
-		suffix = "MC"
+	suf, ct := "M", "0"
+	if fileio.GetCellValue(row, h["TYPE"]) == "SP_SC" {
+		suf, ct = "MC", "45"
 	}
-	sbo := fileio.GetCellValueOrDefault(row, headerMap, "SBO", "0")
-	conType := "0"
-	if fileio.GetCellValue(row, headerMap["TYPE"]) == "SP_SC" {
-		conType = "45"
-	}
-	b1 := fileio.GetCellValue(row, headerMap["B1"])
-	b2 := fileio.GetCellValue(row, headerMap["B2"])
-	b3 := fileio.GetCellValue(row, headerMap["B3"])
-	info := fileio.GetCellValue(row, headerMap["INFO"])
-	ifsPointName := fmt.Sprintf("%s_%s_%s_%s_%s_%s", b1, b2, b3, ifsNamePart, info, suffix)
-	empresa := fileio.GetCellValue(row, headerMap["EMPRESA"])
-	region := fileio.GetCellValue(row, headerMap["REGION"])
-	pathB := fmt.Sprintf("ELECTRICITY/NETWORK/%s/%s/%s/%s/%s/%s/%s", empresa, region, b1, b2, b3, ifsPathPart, info)
+	sbo := fileio.GetCellValueOrDefault(row, h, "SBO", "0")
+	b1 := fileio.GetCellValue(row, h["B1"])
+	b2 := fileio.GetCellValue(row, h["B2"])
+	b3 := fileio.GetCellValue(row, h["B3"])
+	info := fileio.GetCellValue(row, h["INFO"])
+	emp := fileio.GetCellValue(row, h["EMPRESA"])
+	reg := fileio.GetCellValue(row, h["REGION"])
 	return &IfsPoint{
-		Name:          ifsPointName,
-		MonAddrHigh:   fileio.GetCellValueOrDefault(row, headerMap, "MHB", "0"),
-		MonAddrMiddle: fileio.GetCellValueOrDefault(row, headerMap, "MMB", "0"),
-		MonAddrLow:    fileio.GetCellValueOrDefault(row, headerMap, "MLB", "0"),
-		MonType:       "0",
-		ConAddrHigh:   fileio.GetCellValueOrDefault(row, headerMap, "CHB", "0"),
-		ConAddrMiddle: fileio.GetCellValueOrDefault(row, headerMap, "CMB", "0"),
-		ConAddrLow:    fileio.GetCellValueOrDefault(row, headerMap, "CLB", "0"),
-		ConType:       conType, SelectBefore: sbo,
-		Link_IfsPointLinksToInfo: &Link_IfsPointLinksToInfo{PathB: pathB},
+		Name:                     fmt.Sprintf("%s_%s_%s_%s_%s_%s", b1, b2, b3, nm, info, suf),
+		MonAddrHigh:              fileio.GetCellValueOrDefault(row, h, "MHB", "0"),
+		MonAddrMiddle:            fileio.GetCellValueOrDefault(row, h, "MMB", "0"),
+		MonAddrLow:               fileio.GetCellValueOrDefault(row, h, "MLB", "0"),
+		MonType:                  "0",
+		ConAddrHigh:              fileio.GetCellValueOrDefault(row, h, "CHB", "0"),
+		ConAddrMiddle:            fileio.GetCellValueOrDefault(row, h, "CMB", "0"),
+		ConAddrLow:               fileio.GetCellValueOrDefault(row, h, "CLB", "0"),
+		ConType:                  ct,
+		SelectBefore:             sbo,
+		Link_IfsPointLinksToInfo: &Link_IfsPointLinksToInfo{PathB: fmt.Sprintf("ELECTRICITY/NETWORK/%s/%s/%s/%s/%s/%s/%s", emp, reg, b1, b2, b3, pt, info)},
 	}
 }
 
-func createIMMElement(template ElementDef, displayName string, row []string, headerMap map[string]int, tm *TemplateManager) (any, error) {
-	instance, err := tm.DeepCopyElement(template)
+func createIMMElement(tpl ElementDef, dn string, row []string, h map[string]int, tm *TemplateManager) (any, error) {
+	inst, err := tm.DeepCopyElement(tpl)
 	if err != nil {
 		return nil, err
 	}
-	aor := fileio.GetCellValue(row, headerMap["AOR"])
-	if instance.Analog != nil {
-		instance.Analog.Name = displayName
-		instance.Analog.AreaOfResponsibilityId = aor
-		return instance.Analog, nil
+	aor := fileio.GetCellValue(row, h["AOR"])
+	if inst.Analog != nil {
+		inst.Analog.Name = dn
+		inst.Analog.AreaOfResponsibilityId = aor
+		return inst.Analog, nil
 	}
-	if instance.Discrete != nil {
-		instance.Discrete.Name = displayName
-		instance.Discrete.AreaOfResponsibilityId = aor
-		return instance.Discrete, nil
+	if inst.Discrete != nil {
+		inst.Discrete.Name = dn
+		inst.Discrete.AreaOfResponsibilityId = aor
+		return inst.Discrete, nil
 	}
-	if instance.Breaker != nil {
-		instance.Breaker.Name = displayName
-		instance.Breaker.AreaOfResponsibilityId = aor
-		if instance.Breaker.Discrete != nil {
-			instance.Breaker.Discrete.Name = displayName
-			instance.Breaker.Discrete.AreaOfResponsibilityId = aor
+	if inst.Breaker != nil {
+		inst.Breaker.Name = dn
+		inst.Breaker.AreaOfResponsibilityId = aor
+		if inst.Breaker.Discrete != nil {
+			inst.Breaker.Discrete.Name = dn
+			inst.Breaker.Discrete.AreaOfResponsibilityId = aor
 		}
-		return instance.Breaker, nil
+		return inst.Breaker, nil
 	}
 	return nil, nil
 }
 
-func createBreakerLinks(cbRow []string, allRows [][]string, headerMap map[string]int) ([]any, string) {
-	targetMeasurements := map[string]bool{"P": true, "Q": true, "I_S": true, "U_RS": true}
+func createBreakerLinks(cb []string, all [][]string, h map[string]int) ([]any, string) {
+	tgt := map[string]bool{"P": true, "Q": true, "I_S": true, "U_RS": true}
 	var links []Link_TerminalMeasuredByMeasurement
-	empresa := fileio.GetCellValue(cbRow, headerMap["EMPRESA"])
-	region := fileio.GetCellValue(cbRow, headerMap["REGION"])
-	b1 := fileio.GetCellValue(cbRow, headerMap["B1"])
-	b2 := fileio.GetCellValue(cbRow, headerMap["B2"])
-	b3 := fileio.GetCellValue(cbRow, headerMap["B3"])
-	basePathB := fmt.Sprintf("ELECTRICITY/NETWORK/%s/%s/%s/%s/%s", empresa, region, b1, b2, b3)
-	for _, row := range allRows {
-		if len(row) <= headerMap["ELEMENT"] {
+	base := fmt.Sprintf("ELECTRICITY/NETWORK/%s/%s/%s/%s/%s",
+		fileio.GetCellValue(cb, h["EMPRESA"]), fileio.GetCellValue(cb, h["REGION"]),
+		fileio.GetCellValue(cb, h["B1"]), fileio.GetCellValue(cb, h["B2"]), fileio.GetCellValue(cb, h["B3"]))
+	for _, row := range all {
+		if len(row) <= h["ELEMENT"] {
 			continue
 		}
-		elementKey := fileio.GetCellValue(row, headerMap["ELEMENT"])
-		if targetMeasurements[elementKey] {
-			displayName := strings.ReplaceAll(elementKey, "_", " ")
-			links = append(links, Link_TerminalMeasuredByMeasurement{PathB: fmt.Sprintf("%s/%s", basePathB, displayName)})
+		k := fileio.GetCellValue(row, h["ELEMENT"])
+		if tgt[k] {
+			links = append(links, Link_TerminalMeasuredByMeasurement{PathB: fmt.Sprintf("%s/%s", base, strings.ReplaceAll(k, "_", " "))})
 		}
 	}
 	if len(links) == 0 {
@@ -237,46 +233,43 @@ func createBreakerLinks(cbRow []string, allRows [][]string, headerMap map[string
 	return []any{LinkedTerminal{Name: "T1", Links: links}}, "CB"
 }
 
-func generateXMLFiles(result *ProcessingResult, firstRow []string, headerMap map[string]int, cfg *config.AppConfig, dasipCfg *config.DasipConfig) error {
-	b3 := fileio.GetCellValue(firstRow, headerMap["B3"])
-	empresa := fileio.GetCellValue(firstRow, headerMap["EMPRESA"])
-	region := fileio.GetCellValue(firstRow, headerMap["REGION"])
-	b1 := fileio.GetCellValue(firstRow, headerMap["B1"])
-	b2 := fileio.GetCellValue(firstRow, headerMap["B2"])
-	dasIP := fileio.GetCellValueOrDefault(firstRow, headerMap, "DASIP", "")
-	ifsParentPath := dasipCfg.GetIfsParentPath(dasIP)
-	if err := generateIFSFile(b3, ifsParentPath, result.ElementsIFS, cfg); err != nil {
+func generateXMLFiles(r *ProcessingResult, first []string, h map[string]int, cfg *config.AppConfig, dCfg *config.DasipConfig, lg Logger) error {
+	b3 := fileio.GetCellValue(first, h["B3"])
+	emp := fileio.GetCellValue(first, h["EMPRESA"])
+	reg := fileio.GetCellValue(first, h["REGION"])
+	b1 := fileio.GetCellValue(first, h["B1"])
+	b2 := fileio.GetCellValue(first, h["B2"])
+	dasIP := fileio.GetCellValueOrDefault(first, h, "DASIP", "")
+	if err := generateIFSFile(b3, dCfg.GetIfsParentPath(dasIP), r.ElementsIFS, cfg, lg); err != nil {
 		return err
 	}
-	return generateIMMFile(b3, empresa, region, b1, b2, result, cfg)
+	return generateIMMFile(b3, emp, reg, b1, b2, r, cfg, lg)
 }
 
-func generateIFSFile(b3, parentPath string, elements []any, cfg *config.AppConfig) error {
-	if len(elements) == 0 {
+func generateIFSFile(b3, pp string, els []any, cfg *config.AppConfig, lg Logger) error {
+	if len(els) == 0 {
 		return nil
 	}
-	parents := []Parent{{Path: parentPath, Elements: elements}}
-	return createAndSaveXML(fmt.Sprintf("%s%s", b3, cfg.Output.Suffixes["ifs"]), parents, cfg)
+	return createAndSaveXML(fmt.Sprintf("%s%s", b3, cfg.Output.Suffixes["ifs"]), []Parent{{Path: pp, Elements: els}}, cfg, lg)
 }
 
-func generateIMMFile(b3, empresa, region, b1, b2 string, result *ProcessingResult, cfg *config.AppConfig) error {
-	if len(result.ElementsIMM) == 0 {
+func generateIMMFile(b3, emp, reg, b1, b2 string, r *ProcessingResult, cfg *config.AppConfig, lg Logger) error {
+	if len(r.ElementsIMM) == 0 {
 		return nil
 	}
-	immParentPath := fmt.Sprintf("ELECTRICITY/NETWORK/%s/%s/%s/%s/%s", empresa, region, b1, b2, b3)
-	parents := []Parent{{Path: immParentPath, Elements: result.ElementsIMM}}
-	if len(result.BreakerLinks) > 0 && result.BreakerName != "" {
-		parents = append(parents, Parent{Path: fmt.Sprintf("%s/%s", immParentPath, result.BreakerName), Elements: result.BreakerLinks})
+	pp := fmt.Sprintf("ELECTRICITY/NETWORK/%s/%s/%s/%s/%s", emp, reg, b1, b2, b3)
+	parents := []Parent{{Path: pp, Elements: r.ElementsIMM}}
+	if len(r.BreakerLinks) > 0 && r.BreakerName != "" {
+		parents = append(parents, Parent{Path: fmt.Sprintf("%s/%s", pp, r.BreakerName), Elements: r.BreakerLinks})
 	}
-	return createAndSaveXML(fmt.Sprintf("%s%s", b3, cfg.Output.Suffixes["imm"]), parents, cfg)
+	return createAndSaveXML(fmt.Sprintf("%s%s", b3, cfg.Output.Suffixes["imm"]), parents, cfg, lg)
 }
 
-func createAndSaveXML(fileName string, parents []Parent, cfg *config.AppConfig) error {
+func createAndSaveXML(fn string, parents []Parent, cfg *config.AppConfig, lg Logger) error {
 	xdf := XDF{Lang: cfg.XML.Lang, Version: cfg.XML.Version, Instances: Instances{Parents: parents}}
-	fullPath := cfg.GetOutputPath(fileName)
-	if err := fileio.NewXMLWriter(fullPath, cfg.XML.Indent).Write(xdf); err != nil {
-		return fmt.Errorf("error escribiendo XML '%s': %w", fileName, err)
+	if err := fileio.NewXMLWriter(cfg.GetOutputPath(fn), cfg.XML.Indent).Write(xdf); err != nil {
+		return fmt.Errorf("error escribiendo XML '%s': %w", fn, err)
 	}
-	log.Printf("[OK] Archivo generado: %s", fileName)
+	lg.Infof("Archivo generado: %s", fn)
 	return nil
 }
